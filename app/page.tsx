@@ -267,25 +267,6 @@ export default function Home() {
         {/* --- List View Header --- */}
         {view === "list" && (
           <header className="flex-shrink-0 flex flex-col bg-background-dark px-6 pt-12 pb-2">
-            <div className="mb-4 flex items-center justify-between">
-              <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
-                <span className="material-symbols-outlined text-3xl text-text-dark">
-                  calendar_today
-                </span>
-              </button>
-              <div className="flex items-center gap-2">
-                <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
-                  <span className="material-symbols-outlined text-2xl text-text-dark">
-                    search
-                  </span>
-                </button>
-                <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
-                  <span className="material-symbols-outlined text-2xl text-text-dark">
-                    settings
-                  </span>
-                </button>
-              </div>
-            </div>
             <div className="flex flex-col gap-1">
               <h1 className="text-4xl font-bold tracking-tight text-text-dark">
                 My Log
@@ -626,25 +607,13 @@ export default function Home() {
 
         {/* --- Bottom Nav (List View Only) --- */}
         {view === "list" && (
-          <div className="absolute bottom-0 left-0 right-0 z-30 w-full border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm pb-6 pt-2">
-            <div className="flex h-14 items-center justify-around">
-              <button
-                onClick={() => setView("list")}
-                className={`flex w-20 flex-col items-center gap-1 ${
-                  view === "list" ? "text-primary" : "text-gray-500"
-                }`}
-              >
-                <span
-                  className="material-symbols-outlined fill-current"
-                  style={{
-                    fontVariationSettings:
-                      view === "list" ? "'FILL' 1" : "'FILL' 0",
-                  }}
-                >
-                  list_alt
-                </span>
-                <span className="text-[10px] font-semibold">List</span>
-              </button>
+          <div
+            className="absolute bottom-0 left-0 right-0 z-50 w-full overflow-visible border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm pt-2"
+            style={{
+              paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 1.5rem))",
+            }}
+          >
+            <div className="flex h-14 items-center justify-center overflow-visible">
               <button
                 onClick={() => {
                   resetForm();
@@ -664,7 +633,7 @@ export default function Home() {
 
                   setView("new");
                 }}
-                className="-mt-6 flex flex-col items-center justify-center"
+                className="relative -mt-6 flex flex-col items-center justify-center z-50"
               >
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-purple-600/40 transition-all hover:scale-105 active:scale-95">
                   <span className="material-symbols-outlined text-[32px]">
@@ -674,10 +643,6 @@ export default function Home() {
                 <span className="mt-1 text-[10px] font-medium text-gray-400">
                   New
                 </span>
-              </button>
-              <button className="flex w-20 flex-col items-center gap-1 text-gray-500 transition-colors hover:text-gray-300">
-                <span className="material-symbols-outlined">insights</span>
-                <span className="text-[10px] font-medium">Summary</span>
               </button>
             </div>
           </div>
