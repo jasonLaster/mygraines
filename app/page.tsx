@@ -11,14 +11,12 @@ const minDate = `${currentYear}-01-01T00:00`;
 const maxDate = `${currentYear}-12-31T23:59`;
 
 const TRIGGERS = [
-  "Lights",
+  "Crohns",
+  "Coffee",
+  "Sleep",
   "Stress",
   "Dehydration",
-  "Noise",
-  "Food",
-  "Sleep",
-  "Weather",
-  "Hormonal",
+  "Other",
 ];
 
 // --- Helpers ---
@@ -54,7 +52,7 @@ function formatFriendlyDate(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
-  
+
   // Check yesterday
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -67,7 +65,7 @@ function formatFriendlyDate(dateStr: string): string {
 
   if (isToday) return `Today, ${timeStr}`;
   if (isYesterday) return `Yesterday, ${timeStr}`;
-  
+
   return `${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${timeStr}`;
 }
 
@@ -137,7 +135,7 @@ export default function Home() {
   // We use unified state for form dates now
   const [formStartTime, setFormStartTime] = useState("");
   const [formEndTime, setFormEndTime] = useState("");
-  
+
   const [editingId, setEditingId] = useState<Id<"migraines"> | null>(null);
   const [notes, setNotes] = useState("");
   const [selectedTriggers, setSelectedTriggers] = useState<string[]>([]);
@@ -163,7 +161,9 @@ export default function Home() {
 
   const handleCreate = async () => {
     try {
-      const startTime = formStartTime ? new Date(formStartTime).getTime() : Date.now();
+      const startTime = formStartTime
+        ? new Date(formStartTime).getTime()
+        : Date.now();
       const endTime = formEndTime ? new Date(formEndTime).getTime() : undefined;
 
       await createMigraine({
@@ -185,9 +185,11 @@ export default function Home() {
   const handleSaveEdit = async () => {
     if (!editingId) return;
     try {
-      const startTime = formStartTime ? new Date(formStartTime).getTime() : undefined;
+      const startTime = formStartTime
+        ? new Date(formStartTime).getTime()
+        : undefined;
       const endTime = formEndTime ? new Date(formEndTime).getTime() : null; // null means active
-      
+
       await updateMigraine({
         id: editingId,
         severity,
@@ -207,27 +209,35 @@ export default function Home() {
     if (!editingId) return;
     if (!confirm("Are you sure you want to delete this entry?")) return;
     try {
-        await deleteMigraine({ id: editingId });
-        resetForm();
-        setView("list");
+      await deleteMigraine({ id: editingId });
+      resetForm();
+      setView("list");
     } catch (error) {
-        alert(error instanceof Error ? error.message : "Failed to delete");
+      alert(error instanceof Error ? error.message : "Failed to delete");
     }
   };
 
   const startEdit = (migraine: Doc<"migraines">) => {
     setEditingId(migraine._id);
     setSeverity(migraine.severity);
-    
+
     // Convert timestamp to local datetime string
     const start = new Date(migraine.startTime);
-    setFormStartTime(new Date(start.getTime() - (start.getTimezoneOffset() * 60000)).toISOString().slice(0, 16));
-    
+    setFormStartTime(
+      new Date(start.getTime() - start.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16)
+    );
+
     if (migraine.endTime) {
-        const end = new Date(migraine.endTime);
-        setFormEndTime(new Date(end.getTime() - (end.getTimezoneOffset() * 60000)).toISOString().slice(0, 16));
+      const end = new Date(migraine.endTime);
+      setFormEndTime(
+        new Date(end.getTime() - end.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, 16)
+      );
     } else {
-        setFormEndTime("");
+      setFormEndTime("");
     }
 
     setNotes(migraine.notes || "");
@@ -253,46 +263,45 @@ export default function Home() {
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
-      <div className="relative mx-auto flex h-full w-full max-w-md flex-1 flex-col overflow-hidden bg-background-dark">
-        
+      <div className="relative mx-auto flex h-full w-full max-w-md flex-col overflow-hidden bg-background-dark">
         {/* --- List View Header --- */}
         {view === "list" && (
-            <header className="sticky top-0 z-10 flex flex-col bg-background-dark px-6 pt-12 pb-2">
+          <header className="flex-shrink-0 flex flex-col bg-background-dark px-6 pt-12 pb-2">
             <div className="mb-4 flex items-center justify-between">
-                <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
+              <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
                 <span className="material-symbols-outlined text-3xl text-text-dark">
-                    calendar_today
+                  calendar_today
                 </span>
-                </button>
-                <div className="flex items-center gap-2">
+              </button>
+              <div className="flex items-center gap-2">
                 <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
-                    <span className="material-symbols-outlined text-2xl text-text-dark">
+                  <span className="material-symbols-outlined text-2xl text-text-dark">
                     search
-                    </span>
+                  </span>
                 </button>
                 <button className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-white/10">
-                    <span className="material-symbols-outlined text-2xl text-text-dark">
+                  <span className="material-symbols-outlined text-2xl text-text-dark">
                     settings
-                    </span>
+                  </span>
                 </button>
-                </div>
+              </div>
             </div>
             <div className="flex flex-col gap-1">
-                <h1 className="text-4xl font-bold tracking-tight text-text-dark">
+              <h1 className="text-4xl font-bold tracking-tight text-text-dark">
                 My Log
-                </h1>
-                <p className="text-sm font-medium text-accent-purple">
+              </h1>
+              <p className="text-sm font-medium text-accent-purple">
                 {allMigraines.length} Entries
-                </p>
+              </p>
             </div>
-            </header>
+          </header>
         )}
 
         {/* --- Main Content Area --- */}
         {view === "list" && (
           <>
             {/* Filter Pills */}
-            <div className="no-scrollbar z-10 flex-shrink-0 overflow-x-auto bg-background-dark px-6 py-2">
+            <div className="no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 py-2">
               <div className="flex gap-3">
                 {(["All", "Severe", "Moderate", "Mild"] as const).map((f) => {
                   // Map UI filter names to logic
@@ -393,238 +402,285 @@ export default function Home() {
 
         {/* --- New / Edit Views (Updated Layout) --- */}
         {(view === "new" || view === "edit") && (
-          <div className="flex h-full flex-col bg-background-dark">
+          <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
             {/* Header */}
-            <header className="flex items-center justify-between px-6 py-6">
-                <button 
-                    onClick={() => { resetForm(); setView("list"); }}
-                    className="p-2 -ml-2 text-gray-400 hover:text-white"
-                >
-                    <span className="material-symbols-outlined">close</span>
-                </button>
-                <h2 className="text-lg font-bold text-text-dark">
-                    {view === "new" ? "New Entry" : "Edit Migraine"}
-                </h2>
-                <button 
-                    onClick={view === "new" ? handleCreate : handleSaveEdit}
-                    className="font-bold text-primary hover:text-accent-purple"
-                >
-                    Save
-                </button>
+            <header className="flex-shrink-0 flex items-center justify-between px-6 py-6">
+              <button
+                onClick={() => {
+                  resetForm();
+                  setView("list");
+                }}
+                className="p-2 -ml-2 text-gray-400 hover:text-white"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+              <h2 className="text-lg font-bold text-text-dark">
+                {view === "new" ? "New Entry" : "Edit Migraine"}
+              </h2>
+              <button
+                onClick={view === "new" ? handleCreate : handleSaveEdit}
+                className="font-bold text-primary hover:text-accent-purple"
+              >
+                Save
+              </button>
             </header>
 
-            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-24">
-                <div className="space-y-8">
-                    
-                    {/* Duration Section */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
-                            <span className="material-symbols-outlined text-[20px]">schedule</span>
-                            <h3>Duration</h3>
-                        </div>
-                        <div className="space-y-3">
-                            {/* Start Time Card */}
-                            <div className="relative rounded-2xl bg-surface-dark p-4 border border-gray-800">
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Start Time</label>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-lg font-bold text-text-dark">
-                                        {formatFriendlyDate(formStartTime)}
-                                    </span>
-                                    <span className="material-symbols-outlined text-gray-400">edit_calendar</span>
-                                </div>
-                                <input
-                                    type="datetime-local"
-                                    value={formStartTime}
-                                    onChange={(e) => setFormStartTime(e.target.value)}
-                                    min={minDate}
-                                    max={maxDate}
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                />
-                            </div>
-
-                            {/* End Time Card */}
-                            <div className="relative rounded-2xl bg-surface-dark p-4 border border-gray-800">
-                                <label className="block text-xs font-medium text-gray-500 mb-1">End Time</label>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        {/* Status Dot */}
-                                        {!formEndTime && <div className="w-2 h-2 rounded-full bg-green-500"></div>}
-                                        <span className="text-lg font-bold text-text-dark">
-                                            {formEndTime ? formatFriendlyDate(formEndTime) : "Ongoing"}
-                                        </span>
-                                    </div>
-                                    <span className="material-symbols-outlined text-gray-400">edit_calendar</span>
-                                </div>
-                                <input
-                                    type="datetime-local"
-                                    value={formEndTime}
-                                    onChange={(e) => setFormEndTime(e.target.value)}
-                                    min={minDate}
-                                    max={maxDate}
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                />
-                            </div>
-                        </div>
+            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-4">
+              <div className="space-y-8">
+                {/* Duration Section */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
+                    <span className="material-symbols-outlined text-[20px]">
+                      schedule
+                    </span>
+                    <h3>Duration</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {/* Start Time Card */}
+                    <div className="relative rounded-2xl bg-surface-dark p-4 border border-gray-800">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Start Time
+                      </label>
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-bold text-text-dark">
+                          {formatFriendlyDate(formStartTime)}
+                        </span>
+                        <span className="material-symbols-outlined text-gray-400">
+                          edit_calendar
+                        </span>
+                      </div>
+                      <input
+                        type="datetime-local"
+                        value={formStartTime}
+                        onChange={(e) => setFormStartTime(e.target.value)}
+                        min={minDate}
+                        max={maxDate}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
                     </div>
 
-                    {/* Intensity Section */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
-                            <span className="material-symbols-outlined text-[20px]">favorite</span>
-                            <h3>Intensity Level</h3>
+                    {/* End Time Card */}
+                    <div className="relative rounded-2xl bg-surface-dark p-4 border border-gray-800">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        End Time
+                      </label>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {/* Status Dot */}
+                          {!formEndTime && (
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                          )}
+                          <span className="text-lg font-bold text-text-dark">
+                            {formEndTime
+                              ? formatFriendlyDate(formEndTime)
+                              : "Ongoing"}
+                          </span>
                         </div>
-                        <div className="rounded-3xl bg-surface-dark p-8 border border-gray-800 flex flex-col items-center">
-                            <div className="text-6xl font-bold text-text-dark mb-1">{severity}</div>
-                            <div className="text-xs font-bold tracking-widest text-accent-purple uppercase mb-8">
-                                {severity >= 8 ? "Severe" : severity >= 5 ? "Moderate" : severity >= 3 ? "Mild" : "Low"}
-                            </div>
-                            
-                            <div className="w-full relative">
-                                <div className="flex justify-between text-xs text-gray-500 font-medium mb-2 px-1">
-                                    <span>Mild</span>
-                                    <span>Extreme</span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="1"
-                                    max="10"
-                                    value={severity}
-                                    onChange={(e) => setSeverity(Number(e.target.value))}
-                                    className="w-full accent-primary h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                                {/* Ticks visual approximation */}
-                                <div className="flex justify-between px-1 mt-2">
-                                    {[...Array(10)].map((_, i) => (
-                                        <div key={i} className="w-0.5 h-1 bg-gray-700"></div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
+                        <span className="material-symbols-outlined text-gray-400">
+                          edit_calendar
+                        </span>
+                      </div>
+                      <input
+                        type="datetime-local"
+                        value={formEndTime}
+                        onChange={(e) => setFormEndTime(e.target.value)}
+                        min={minDate}
+                        max={maxDate}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
                     </div>
-
-                    {/* Triggers */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
-                            <span className="material-symbols-outlined text-[20px]">bolt</span>
-                            <h3>Triggers & Symptoms</h3>
-                        </div>
-                        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-2">
-                            {TRIGGERS.map((trigger) => {
-                                const isSelected = selectedTriggers.includes(trigger);
-                                return (
-                                <button
-                                    key={trigger}
-                                    onClick={() => toggleTrigger(trigger)}
-                                    className={`flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-medium transition-transform active:scale-95 ${
-                                    isSelected
-                                        ? "bg-primary text-white shadow-lg shadow-purple-900/20"
-                                        : "border border-gray-800 bg-surface-dark text-gray-400 hover:bg-gray-800"
-                                    }`}
-                                >
-                                    {trigger === "Lights" && <span className="material-symbols-outlined text-[18px]">light_mode</span>}
-                                    {trigger === "Stress" && <span className="material-symbols-outlined text-[18px]">sentiment_stressed</span>}
-                                    {trigger === "Dehydration" && <span className="material-symbols-outlined text-[18px]">water_drop</span>}
-                                    {trigger}
-                                </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
-                            <span className="material-symbols-outlined text-[20px]">notes</span>
-                            <h3>Notes</h3>
-                        </div>
-                        <div className="rounded-3xl bg-surface-dark p-4 border border-gray-800">
-                            <textarea
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                placeholder="Any additional details about this attack?"
-                                className="w-full bg-transparent text-text-dark placeholder-gray-600 focus:outline-none min-h-[100px] resize-none"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Save Button (Bottom) */}
-                    <button 
-                        onClick={view === "new" ? handleCreate : handleSaveEdit}
-                        className="w-full bg-primary text-white font-bold py-4 rounded-full text-lg shadow-lg shadow-purple-900/30 active:scale-95 transition-transform flex items-center justify-center gap-2"
-                    >
-                        <span className="material-symbols-outlined">check</span>
-                        Save Changes
-                    </button>
-
-                    {/* Delete Button */}
-                    {view === "edit" && (
-                        <button 
-                            onClick={handleDelete}
-                            className="w-full text-red-400 font-medium py-2 flex items-center justify-center gap-2 hover:text-red-300 transition-colors"
-                        >
-                            <span className="material-symbols-outlined text-[20px]">delete</span>
-                            Delete Entry
-                        </button>
-                    )}
-
+                  </div>
                 </div>
+
+                {/* Intensity Section */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
+                    <span className="material-symbols-outlined text-[20px]">
+                      favorite
+                    </span>
+                    <h3>Intensity Level</h3>
+                  </div>
+                  <div className="rounded-3xl bg-surface-dark p-8 border border-gray-800 flex flex-col items-center">
+                    <div className="text-6xl font-bold text-text-dark mb-1">
+                      {severity}
+                    </div>
+                    <div className="text-xs font-bold tracking-widest text-accent-purple uppercase mb-8">
+                      {severity >= 8
+                        ? "Severe"
+                        : severity >= 5
+                          ? "Moderate"
+                          : severity >= 3
+                            ? "Mild"
+                            : "Low"}
+                    </div>
+
+                    <div className="w-full relative">
+                      <div className="flex justify-between text-xs text-gray-500 font-medium mb-2 px-1">
+                        <span>Mild</span>
+                        <span>Extreme</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        value={severity}
+                        onChange={(e) => setSeverity(Number(e.target.value))}
+                        className="w-full accent-primary h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                      />
+                      {/* Ticks visual approximation */}
+                      <div className="flex justify-between px-1 mt-2">
+                        {[...Array(10)].map((_, i) => (
+                          <div key={i} className="w-0.5 h-1 bg-gray-700"></div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Triggers */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
+                    <span className="material-symbols-outlined text-[20px]">
+                      bolt
+                    </span>
+                    <h3>Triggers & Symptoms</h3>
+                  </div>
+                  <div className="no-scrollbar flex gap-2 overflow-x-auto pb-2">
+                    {TRIGGERS.map((trigger) => {
+                      const isSelected = selectedTriggers.includes(trigger);
+                      return (
+                        <button
+                          key={trigger}
+                          onClick={() => toggleTrigger(trigger)}
+                          className={`flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-sm font-medium transition-transform active:scale-95 ${
+                            isSelected
+                              ? "bg-primary text-white shadow-lg shadow-purple-900/20"
+                              : "border border-gray-800 bg-surface-dark text-gray-400 hover:bg-gray-800"
+                          }`}
+                        >
+                          {trigger === "Lights" && (
+                            <span className="material-symbols-outlined text-[18px]">
+                              light_mode
+                            </span>
+                          )}
+                          {trigger === "Stress" && (
+                            <span className="material-symbols-outlined text-[18px]">
+                              sentiment_stressed
+                            </span>
+                          )}
+                          {trigger === "Dehydration" && (
+                            <span className="material-symbols-outlined text-[18px]">
+                              water_drop
+                            </span>
+                          )}
+                          {trigger}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
+                    <span className="material-symbols-outlined text-[20px]">
+                      notes
+                    </span>
+                    <h3>Notes</h3>
+                  </div>
+                  <div className="rounded-3xl bg-surface-dark p-4 border border-gray-800">
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Any additional details about this attack?"
+                      className="w-full bg-transparent text-text-dark placeholder-gray-600 focus:outline-none min-h-[100px] resize-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Save Button (Bottom) */}
+                <button
+                  onClick={view === "new" ? handleCreate : handleSaveEdit}
+                  className="w-full bg-primary text-white font-bold py-4 rounded-full text-lg shadow-lg shadow-purple-900/30 active:scale-95 transition-transform flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined">check</span>
+                  Save Changes
+                </button>
+
+                {/* Delete Button */}
+                {view === "edit" && (
+                  <button
+                    onClick={handleDelete}
+                    className="w-full text-red-400 font-medium py-2 flex items-center justify-center gap-2 hover:text-red-300 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">
+                      delete
+                    </span>
+                    Delete Entry
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* --- Bottom Nav (List View Only) --- */}
         {view === "list" && (
-            <div className="absolute bottom-0 z-30 w-full border-t border-gray-800 bg-surface-dark pb-6 pt-2">
+          <div className="absolute bottom-0 left-0 right-0 z-30 w-full border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm pb-6 pt-2">
             <div className="flex h-14 items-center justify-around">
-                <button
+              <button
                 onClick={() => setView("list")}
                 className={`flex w-20 flex-col items-center gap-1 ${
-                    view === "list" ? "text-primary" : "text-gray-500"
+                  view === "list" ? "text-primary" : "text-gray-500"
                 }`}
-                >
+              >
                 <span
-                    className="material-symbols-outlined fill-current"
-                    style={{
+                  className="material-symbols-outlined fill-current"
+                  style={{
                     fontVariationSettings:
-                        view === "list" ? "'FILL' 1" : "'FILL' 0",
-                    }}
+                      view === "list" ? "'FILL' 1" : "'FILL' 0",
+                  }}
                 >
-                    list_alt
+                  list_alt
                 </span>
                 <span className="text-[10px] font-semibold">List</span>
-                </button>
-                <button
+              </button>
+              <button
                 onClick={() => {
-                    resetForm();
-                    // Initialize new form
-                    const now = new Date();
-                    const localIso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-                    setFormStartTime(localIso);
-                    setFormEndTime("");
-                    setSeverity(5);
-                    setNotes("");
-                    setSelectedTriggers([]);
-                    setEditingId(null);
-                    
-                    setView("new");
+                  resetForm();
+                  // Initialize new form
+                  const now = new Date();
+                  const localIso = new Date(
+                    now.getTime() - now.getTimezoneOffset() * 60000
+                  )
+                    .toISOString()
+                    .slice(0, 16);
+                  setFormStartTime(localIso);
+                  setFormEndTime("");
+                  setSeverity(5);
+                  setNotes("");
+                  setSelectedTriggers([]);
+                  setEditingId(null);
+
+                  setView("new");
                 }}
                 className="-mt-6 flex flex-col items-center justify-center"
-                >
+              >
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-purple-600/40 transition-all hover:scale-105 active:scale-95">
-                    <span className="material-symbols-outlined text-[32px]">
+                  <span className="material-symbols-outlined text-[32px]">
                     add
-                    </span>
+                  </span>
                 </div>
                 <span className="mt-1 text-[10px] font-medium text-gray-400">
-                    New
+                  New
                 </span>
-                </button>
-                <button className="flex w-20 flex-col items-center gap-1 text-gray-500 transition-colors hover:text-gray-300">
+              </button>
+              <button className="flex w-20 flex-col items-center gap-1 text-gray-500 transition-colors hover:text-gray-300">
                 <span className="material-symbols-outlined">insights</span>
                 <span className="text-[10px] font-medium">Summary</span>
-                </button>
+              </button>
             </div>
-            </div>
+          </div>
         )}
       </div>
     </div>
