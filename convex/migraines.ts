@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 function assertSeverity(severity: number) {
   if (!Number.isFinite(severity) || severity < 1 || severity > 10) {
@@ -57,13 +58,24 @@ export const create = mutation({
     const startTime = args.startTime ?? now;
     const endTime = args.endTime ?? null;
 
-    return await ctx.db.insert("migraines", {
+    const migraineId = await ctx.db.insert("migraines", {
       startTime,
       endTime,
       severity: args.severity,
       notes: args.notes,
       triggers: args.triggers,
     });
+
+    // Schedule a check-in notification for 1 hour from now (only for active migraines)
+    if (endTime === null) {
+      await ctx.scheduler.runAfter(
+        60 * 60 * 1000, // 1 hour in ms
+        internal.notifications.sendCheckIn,
+        { migraineId }
+      );
+    }
+
+    return migraineId;
   },
 });
 
@@ -101,5 +113,13 @@ export const deleteMigraine = mutation({
   args: { id: v.id("migraines") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.id);
+  },
+});
+
+// Internal query for use by scheduled notifications
+export const getById = internalQuery({
+  args: { id: v.id("migraines") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
   },
 });
