@@ -2,8 +2,9 @@
 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Id, Doc } from "@/convex/_generated/dataModel";
+import { usePushNotifications } from "./hooks/usePushNotifications";
 
 // --- Constants ---
 const currentYear = new Date().getFullYear();
@@ -125,10 +126,44 @@ export default function Home() {
   const createMigraine = useMutation(api.migraines.create);
   const updateMigraine = useMutation(api.migraines.update);
   const deleteMigraine = useMutation(api.migraines.deleteMigraine);
+  const markDone = useMutation(api.migraines.markDone);
+
+  // Push notifications
+  const {
+    permission,
+    isSubscribed,
+    isLoading: isPushLoading,
+    subscribe,
+    unsubscribe,
+    isSupported,
+  } = usePushNotifications();
 
   // View State
   const [view, setView] = useState<"list" | "new" | "edit">("list");
   const [filter, setFilter] = useState<"All" | SeverityLevel>("All");
+
+  // Handle notification actions from service worker
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === "notification-action") {
+        const { action, migraineId } = event.data;
+        if (action === "ended" && migraineId) {
+          try {
+            await markDone({ id: migraineId as Id<"migraines"> });
+          } catch (error) {
+            console.error("Failed to mark migraine as done:", error);
+          }
+        }
+      }
+    };
+
+    navigator.serviceWorker?.addEventListener("message", handleMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", handleMessage);
+    };
+  }, [markDone]);
 
   // Form State
   const [severity, setSeverity] = useState(5);
@@ -267,13 +302,58 @@ export default function Home() {
         {/* --- List View Header --- */}
         {view === "list" && (
           <header className="flex-shrink-0 flex flex-col bg-background-dark px-6 pt-12 pb-2">
-            <div className="flex flex-col gap-1">
-              <h1 className="text-4xl font-bold tracking-tight text-text-dark">
-                My Log
-              </h1>
-              <p className="text-sm font-medium text-accent-purple">
-                {allMigraines.length} Entries
-              </p>
+            <div className="flex items-start justify-between">
+              <div className="flex flex-col gap-1">
+                <h1 className="text-4xl font-bold tracking-tight text-text-dark">
+                  My Log
+                </h1>
+                <p className="text-sm font-medium text-accent-purple">
+                  {allMigraines.length} Entries
+                </p>
+              </div>
+              {/* Push Notification Toggle */}
+              {isSupported && (
+                <button
+                  onClick={async () => {
+                    try {
+                      if (isSubscribed) {
+                        await unsubscribe();
+                      } else {
+                        await subscribe();
+                      }
+                    } catch (error) {
+                      console.error("Push notification error:", error);
+                      alert(
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to toggle notifications"
+                      );
+                    }
+                  }}
+                  disabled={isPushLoading || permission === "denied"}
+                  className={`relative p-2 rounded-full transition-all ${
+                    isSubscribed
+                      ? "text-primary bg-primary/10"
+                      : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                  } ${isPushLoading ? "opacity-50" : ""} ${
+                    permission === "denied" ? "opacity-30 cursor-not-allowed" : ""
+                  }`}
+                  title={
+                    permission === "denied"
+                      ? "Notifications blocked - enable in browser settings"
+                      : isSubscribed
+                        ? "Disable check-in reminders"
+                        : "Enable check-in reminders"
+                  }
+                >
+                  <span className="material-symbols-outlined text-[24px]">
+                    {isSubscribed ? "notifications_active" : "notifications"}
+                  </span>
+                  {isSubscribed && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
+                  )}
+                </button>
+              )}
             </div>
           </header>
         )}

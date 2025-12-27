@@ -11,4 +11,12 @@ export default defineSchema({
   })
     .index("by_endTime", ["endTime"])
     .index("by_startTime", ["startTime"]),
+
+  pushSubscriptions: defineTable({
+    endpoint: v.string(),
+    keys: v.object({
+      p256dh: v.string(),
+      auth: v.string(),
+    }),
+  }).index("by_endpoint", ["endpoint"]),
 });
