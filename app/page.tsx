@@ -262,7 +262,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
       <div className="relative mx-auto flex h-full w-full max-w-md flex-col overflow-hidden bg-background-dark">
         {/* --- List View Header --- */}
         {view === "list" && (
@@ -608,7 +608,7 @@ export default function Home() {
         {/* --- Bottom Nav (List View Only) --- */}
         {view === "list" && (
           <div
-            className="absolute bottom-0 left-0 right-0 z-50 w-full overflow-visible border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm pt-2"
+            className="fixed bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto overflow-visible border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm pt-2"
             style={{
               paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 1.5rem))",
             }}
