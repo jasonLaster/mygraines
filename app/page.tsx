@@ -264,25 +264,12 @@ export default function Home() {
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
       <div className="relative mx-auto flex h-full w-full max-w-md flex-col overflow-hidden bg-background-dark">
-        {/* --- List View Header --- */}
-        {view === "list" && (
-          <header className="flex-shrink-0 flex flex-col bg-background-dark px-6 pt-12 pb-2">
-            <div className="flex flex-col gap-1">
-              <h1 className="text-4xl font-bold tracking-tight text-text-dark">
-                My Log
-              </h1>
-              <p className="text-sm font-medium text-accent-purple">
-                {allMigraines.length} Entries
-              </p>
-            </div>
-          </header>
-        )}
 
         {/* --- Main Content Area --- */}
         {view === "list" && (
           <>
             {/* Filter Pills */}
-            <div className="no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 py-2">
+            <div className="no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 pt-12 pb-2">
               <div className="flex gap-3">
                 {(["All", "Severe", "Moderate", "Mild"] as const).map((f) => {
                   // Map UI filter names to logic
