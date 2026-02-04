@@ -57,10 +57,14 @@ export const create = mutation({
     const startTime = args.startTime ?? now;
     const endTime = args.endTime ?? null;
 
+    // Initialize severity history with the starting severity
+    const severityHistory = [{ timestamp: startTime, severity: args.severity }];
+
     return await ctx.db.insert("migraines", {
       startTime,
       endTime,
       severity: args.severity,
+      severityHistory,
       notes: args.notes,
       triggers: args.triggers,
     });
@@ -87,6 +91,39 @@ export const update = mutation({
     if (args.triggers !== undefined) patch.triggers = args.triggers;
 
     await ctx.db.patch(args.id, patch);
+  },
+});
+
+// Add a timestamped severity adjustment to an active migraine
+export const recordSeverityChange = mutation({
+  args: {
+    id: v.id("migraines"),
+    severity: v.number(),
+    timestamp: v.optional(v.number()), // optional custom timestamp, defaults to now
+  },
+  handler: async (ctx, args) => {
+    assertSeverity(args.severity);
+
+    const migraine = await ctx.db.get(args.id);
+    if (!migraine) {
+      throw new Error("Migraine not found");
+    }
+
+    const timestamp = args.timestamp ?? Date.now();
+    const newEntry = { timestamp, severity: args.severity };
+
+    // Get existing history or initialize empty array
+    const existingHistory = migraine.severityHistory || [];
+
+    // Add new entry and sort by timestamp
+    const updatedHistory = [...existingHistory, newEntry].sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
+
+    await ctx.db.patch(args.id, {
+      severity: args.severity, // Update current severity
+      severityHistory: updatedHistory,
+    });
   },
 });
 
