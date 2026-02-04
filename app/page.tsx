@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Id, Doc } from "@/convex/_generated/dataModel";
 
 // --- Constants ---
@@ -18,6 +18,12 @@ const TRIGGERS = [
   "Dehydration",
   "Other",
 ];
+
+// Severity entry type
+type SeverityEntry = {
+  timestamp: number;
+  severity: number;
+};
 
 // --- Helpers ---
 
@@ -45,6 +51,16 @@ function formatDuration(startTime: number, endTime: number | null): string {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;
+}
+
+function formatTimeSince(startTime: number, timestamp: number): string {
+  const ms = timestamp - startTime;
+  const minutes = Math.floor(ms / (1000 * 60));
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+
+  if (minutes < 1) return "Start";
+  if (hours < 1) return `+${minutes}m`;
+  return `+${hours}h ${minutes % 60}m`;
 }
 
 function formatFriendlyDate(dateStr: string): string {
@@ -144,17 +160,31 @@ function getMonthName(month: number): string {
 
 export default function Home() {
   const allMigraines = useQuery(api.migraines.getAll);
+  const activeMigraine = useQuery(api.migraines.getActive);
   const createMigraine = useMutation(api.migraines.create);
   const updateMigraine = useMutation(api.migraines.update);
   const deleteMigraine = useMutation(api.migraines.deleteMigraine);
+  const recordSeverityChange = useMutation(api.migraines.recordSeverityChange);
+  const markDone = useMutation(api.migraines.markDone);
 
   // View State
-  const [view, setView] = useState<"list" | "calendar" | "new" | "edit">("list");
+  const [view, setView] = useState<"list" | "calendar" | "new" | "edit" | "active">("list");
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
   const [filter, setFilter] = useState<"All" | SeverityLevel>("All");
+  
+  // Live tracking state
+  const [, setTick] = useState(0); // For re-rendering duration
+
+  // Update duration every minute for active migraines
+  useEffect(() => {
+    if (activeMigraine || view === "active") {
+      const interval = setInterval(() => setTick((t) => t + 1), 60000);
+      return () => clearInterval(interval);
+    }
+  }, [activeMigraine, view]);
 
   // Form State
   const [severity, setSeverity] = useState(5);
@@ -243,6 +273,30 @@ export default function Home() {
     }
   };
 
+  // Quick severity adjustment for active migraine
+  const handleQuickSeverityChange = async (newSeverity: number) => {
+    if (!activeMigraine) return;
+    try {
+      await recordSeverityChange({
+        id: activeMigraine._id,
+        severity: newSeverity,
+      });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to update severity");
+    }
+  };
+
+  // End the active migraine
+  const handleEndMigraine = async () => {
+    if (!activeMigraine) return;
+    try {
+      await markDone({ id: activeMigraine._id });
+      setView("list");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to end migraine");
+    }
+  };
+
   const startEdit = (migraine: Doc<"migraines">) => {
     setEditingId(migraine._id);
     setSeverity(migraine.severity);
@@ -294,8 +348,40 @@ export default function Home() {
         {/* --- Main Content Area --- */}
         {view === "list" && (
           <>
+            {/* Active Migraine Banner */}
+            {activeMigraine && (
+              <div
+                onClick={() => setView("active")}
+                className="mx-4 mt-10 mb-2 cursor-pointer"
+              >
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary via-purple-600 to-primary bg-[length:200%_100%] animate-gradient p-4 shadow-lg shadow-purple-900/30">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+                        <div className="w-3 h-3 rounded-full bg-white animate-pulse"></div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-white">Active Migraine</h3>
+                          <span className="text-xs font-medium text-white/70 bg-white/20 px-2 py-0.5 rounded-full">
+                            Severity {activeMigraine.severity}
+                          </span>
+                        </div>
+                        <p className="text-sm text-white/80">
+                          {formatDuration(activeMigraine.startTime, null)} • Tap to track
+                        </p>
+                      </div>
+                    </div>
+                    <span className="material-symbols-outlined text-white/80">
+                      chevron_right
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Filter Pills */}
-            <div className="no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 pt-12 pb-2">
+            <div className={`no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 ${activeMigraine ? 'pt-2' : 'pt-12'} pb-2`}>
               <div className="flex gap-3">
                 {(["All", "Severe", "Moderate", "Mild"] as const).map((f) => {
                   // Map UI filter names to logic
@@ -608,6 +694,153 @@ export default function Home() {
           </>
         )}
 
+        {/* --- Active Migraine Tracking View --- */}
+        {view === "active" && activeMigraine && (
+          <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
+            {/* Header */}
+            <header className="flex-shrink-0 flex items-center justify-between px-6 py-6">
+              <button
+                onClick={() => setView("list")}
+                className="p-2 -ml-2 text-gray-400 hover:text-white"
+              >
+                <span className="material-symbols-outlined">arrow_back</span>
+              </button>
+              <h2 className="text-lg font-bold text-text-dark">Live Tracking</h2>
+              <button
+                onClick={() => startEdit(activeMigraine)}
+                className="p-2 -mr-2 text-gray-400 hover:text-white"
+              >
+                <span className="material-symbols-outlined">edit</span>
+              </button>
+            </header>
+
+            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-24">
+              {/* Live Status Card */}
+              <div className="rounded-3xl bg-gradient-to-br from-primary/20 to-purple-900/20 border border-primary/30 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+                    <span className="text-sm font-medium text-green-400">Active</span>
+                  </div>
+                  <span className="text-sm text-gray-400">
+                    Started {formatTime(activeMigraine.startTime)}
+                  </span>
+                </div>
+                
+                <div className="text-center mb-6">
+                  <div className="text-6xl font-bold text-text-dark mb-1">
+                    {activeMigraine.severity}
+                  </div>
+                  <div className="text-sm font-medium text-gray-400">
+                    Current Severity
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-4 text-sm text-gray-400">
+                  <div className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[18px]">schedule</span>
+                    <span>{formatDuration(activeMigraine.startTime, null)}</span>
+                  </div>
+                  {activeMigraine.triggers && activeMigraine.triggers.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[18px]">bolt</span>
+                      <span>{activeMigraine.triggers.length} triggers</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Severity Adjustment */}
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-gray-400 mb-3">Quick Adjust Severity</h3>
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((sev) => {
+                    const details = getSeverityDetails(sev);
+                    const isCurrentSeverity = activeMigraine.severity === sev;
+                    return (
+                      <button
+                        key={sev}
+                        onClick={() => handleQuickSeverityChange(sev)}
+                        className={`aspect-square rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-95 ${
+                          isCurrentSeverity
+                            ? `${details.bgClass} ${details.colorClass} border-2 ${details.borderClass} ring-2 ring-offset-2 ring-offset-background-dark ring-primary`
+                            : `bg-surface-dark border border-gray-800 text-gray-400 hover:${details.bgClass} hover:${details.colorClass}`
+                        }`}
+                      >
+                        {sev}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Tap a number to record a severity change with timestamp
+                </p>
+              </div>
+
+              {/* Severity Timeline */}
+              <div className="mb-6">
+                <h3 className="text-sm font-bold text-gray-400 mb-3">Severity Timeline</h3>
+                <div className="rounded-2xl bg-surface-dark border border-gray-800 p-4">
+                  {activeMigraine.severityHistory && activeMigraine.severityHistory.length > 0 ? (
+                    <div className="space-y-3">
+                      {[...activeMigraine.severityHistory]
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .map((entry: SeverityEntry, idx: number) => {
+                          const details = getSeverityDetails(entry.severity);
+                          const isLatest = idx === 0;
+                          return (
+                            <div
+                              key={entry.timestamp}
+                              className={`flex items-center gap-3 ${
+                                isLatest ? "" : "opacity-60"
+                              }`}
+                            >
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center ${details.bgClass} ${details.colorClass} border ${details.borderClass}`}
+                              >
+                                <span className="text-sm font-bold">{entry.severity}</span>
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-text-dark">
+                                    {details.level}
+                                  </span>
+                                  {isLatest && (
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/20 px-2 py-0.5 rounded-full">
+                                      Current
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                  <span>{formatTime(entry.timestamp)}</span>
+                                  <span className="text-gray-600">•</span>
+                                  <span>{formatTimeSince(activeMigraine.startTime, entry.timestamp)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      No severity changes recorded yet
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* End Migraine Button */}
+              <button
+                onClick={handleEndMigraine}
+                className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-full text-lg shadow-lg shadow-green-900/30 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined">check_circle</span>
+                End Migraine
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* --- New / Edit Views (Updated Layout) --- */}
         {(view === "new" || view === "edit") && (
           <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
@@ -788,6 +1021,61 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* Severity History (Edit mode only) */}
+                {view === "edit" && editingId && (() => {
+                  const editingMigraine = allMigraines?.find(m => m._id === editingId);
+                  const history = editingMigraine?.severityHistory;
+                  if (!history || history.length === 0) return null;
+                  
+                  return (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
+                        <span className="material-symbols-outlined text-[20px]">
+                          timeline
+                        </span>
+                        <h3>Severity History</h3>
+                      </div>
+                      <div className="rounded-2xl bg-surface-dark border border-gray-800 p-4">
+                        <div className="space-y-3">
+                          {[...history]
+                            .sort((a: SeverityEntry, b: SeverityEntry) => b.timestamp - a.timestamp)
+                            .map((entry: SeverityEntry, idx: number) => {
+                              const details = getSeverityDetails(entry.severity);
+                              const isLatest = idx === 0;
+                              return (
+                                <div
+                                  key={entry.timestamp}
+                                  className={`flex items-center gap-3 ${isLatest ? "" : "opacity-60"}`}
+                                >
+                                  <div
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center ${details.bgClass} ${details.colorClass} border ${details.borderClass}`}
+                                  >
+                                    <span className="text-sm font-bold">{entry.severity}</span>
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-text-dark">{details.level}</span>
+                                      {isLatest && (
+                                        <span className="text-[10px] font-bold uppercase tracking-wide text-primary bg-primary/20 px-2 py-0.5 rounded-full">
+                                          Final
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                      <span>{formatTime(entry.timestamp)}</span>
+                                      <span className="text-gray-600">•</span>
+                                      <span>{formatTimeSince(editingMigraine!.startTime, entry.timestamp)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Notes */}
                 <div>
                   <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
@@ -854,37 +1142,54 @@ export default function Home() {
                 <span className="mt-0.5 text-[10px] font-medium">List</span>
               </button>
 
-              {/* New Entry Button (Center) */}
-              <button
-                onClick={() => {
-                  resetForm();
-                  // Initialize new form
-                  const now = new Date();
-                  const localIso = new Date(
-                    now.getTime() - now.getTimezoneOffset() * 60000
-                  )
-                    .toISOString()
-                    .slice(0, 16);
-                  setFormStartTime(localIso);
-                  setFormEndTime("");
-                  setSeverity(5);
-                  setNotes("");
-                  setSelectedTriggers([]);
-                  setEditingId(null);
-
-                  setView("new");
-                }}
-                className="relative -mt-6 flex flex-col items-center justify-center z-50"
-              >
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-purple-600/40 transition-all hover:scale-105 active:scale-95">
-                  <span className="material-symbols-outlined text-[32px]">
-                    add
+              {/* Center Button: Track (if active) or New (if no active) */}
+              {activeMigraine ? (
+                <button
+                  onClick={() => setView("active")}
+                  className="relative -mt-6 flex flex-col items-center justify-center z-50"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg shadow-green-600/40 transition-all hover:scale-105 active:scale-95">
+                    <div className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-30"></div>
+                    <span className="material-symbols-outlined text-[28px] relative">
+                      monitor_heart
+                    </span>
+                  </div>
+                  <span className="mt-1 text-[10px] font-medium text-green-400">
+                    Track
                   </span>
-                </div>
-                <span className="mt-1 text-[10px] font-medium text-gray-400">
-                  New
-                </span>
-              </button>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    resetForm();
+                    // Initialize new form
+                    const now = new Date();
+                    const localIso = new Date(
+                      now.getTime() - now.getTimezoneOffset() * 60000
+                    )
+                      .toISOString()
+                      .slice(0, 16);
+                    setFormStartTime(localIso);
+                    setFormEndTime("");
+                    setSeverity(5);
+                    setNotes("");
+                    setSelectedTriggers([]);
+                    setEditingId(null);
+
+                    setView("new");
+                  }}
+                  className="relative -mt-6 flex flex-col items-center justify-center z-50"
+                >
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-purple-600/40 transition-all hover:scale-105 active:scale-95">
+                    <span className="material-symbols-outlined text-[32px]">
+                      add
+                    </span>
+                  </div>
+                  <span className="mt-1 text-[10px] font-medium text-gray-400">
+                    New
+                  </span>
+                </button>
+              )}
 
               {/* Calendar Button */}
               <button
