@@ -11,4 +11,11 @@ export default defineSchema({
   })
     .index("by_endTime", ["endTime"])
     .index("by_startTime", ["startTime"]),
+
+  meals: defineTable({
+    timestamp: v.number(), // ms since epoch - when the meal was eaten
+    description: v.string(), // simple text description of the meal
+    notes: v.optional(v.string()), // optional additional notes
+  })
+    .index("by_timestamp", ["timestamp"]),
 });
