@@ -1,9 +1,11 @@
 "use client";
 
 import { useQuery, useMutation } from "convex/react";
+import { useConvexAuth } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useState } from "react";
 import { Id, Doc } from "@/convex/_generated/dataModel";
+import { SignIn, SignOutButton } from "./components/Auth";
 
 // --- Constants ---
 const currentYear = new Date().getFullYear();
@@ -143,12 +145,13 @@ function getMonthName(month: number): string {
 // --- Components ---
 
 export default function Home() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   const allMigraines = useQuery(api.migraines.getAll);
   const createMigraine = useMutation(api.migraines.create);
   const updateMigraine = useMutation(api.migraines.update);
   const deleteMigraine = useMutation(api.migraines.deleteMigraine);
 
-  // View State
+  // View State - must be before any early returns
   const [view, setView] = useState<"list" | "calendar" | "new" | "edit">("list");
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -158,13 +161,25 @@ export default function Home() {
 
   // Form State
   const [severity, setSeverity] = useState(5);
-  // We use unified state for form dates now
   const [formStartTime, setFormStartTime] = useState("");
   const [formEndTime, setFormEndTime] = useState("");
-
   const [editingId, setEditingId] = useState<Id<"migraines"> | null>(null);
   const [notes, setNotes] = useState("");
   const [selectedTriggers, setSelectedTriggers] = useState<string[]>([]);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background-dark text-text-dark">
+        Loading...
+      </div>
+    );
+  }
+
+  // Show sign in form if not authenticated
+  if (!isAuthenticated) {
+    return <SignIn />;
+  }
 
   // -- Handlers --
 
@@ -294,8 +309,14 @@ export default function Home() {
         {/* --- Main Content Area --- */}
         {view === "list" && (
           <>
+            {/* Header with Sign Out */}
+            <div className="flex-shrink-0 flex items-center justify-between bg-background-dark px-6 pt-8 pb-2">
+              <h1 className="text-xl font-bold text-text-dark">My Migraines</h1>
+              <SignOutButton />
+            </div>
+
             {/* Filter Pills */}
-            <div className="no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 pt-12 pb-2">
+            <div className="no-scrollbar flex-shrink-0 overflow-x-auto bg-background-dark px-6 pt-4 pb-2">
               <div className="flex gap-3">
                 {(["All", "Severe", "Moderate", "Mild"] as const).map((f) => {
                   // Map UI filter names to logic
