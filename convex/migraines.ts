@@ -40,19 +40,6 @@ export const create = mutation({
   handler: async (ctx, args) => {
     assertSeverity(args.severity);
 
-    // Only enforce one active migraine at a time
-    if (!args.endTime) {
-      const existingActive = await ctx.db
-        .query("migraines")
-        .withIndex("by_endTime", (q) => q.eq("endTime", null))
-        .first();
-      if (existingActive) {
-        throw new Error(
-          "There is already an active migraine. Mark it done before starting a new one."
-        );
-      }
-    }
-
     const now = Date.now();
     const startTime = args.startTime ?? now;
     const endTime = args.endTime ?? null;
