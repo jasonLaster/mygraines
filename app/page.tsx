@@ -1,11 +1,12 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useState, useRef, useEffect } from "react";
 import { Id, Doc } from "@/convex/_generated/dataModel";
 import { FoodMultiSelect } from "@/components/FoodMultiSelect";
 import { TOP_FOODS } from "@/lib/foods";
+import { useCachedQuery } from "@/lib/use-cached-query";
 
 // --- Constants ---
 const currentYear = new Date().getFullYear();
@@ -144,14 +145,40 @@ function getMonthName(month: number): string {
 
 // --- Components ---
 
+// Same box model as a migraine card in the list (avatar + three text rows) so
+// the list doesn't shift when real data replaces it.
+function MigraineCardSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="flex animate-pulse items-center justify-between rounded-xl border border-gray-800 bg-surface-dark p-4 shadow-lg shadow-black/20"
+    >
+      <div className="flex flex-1 items-start gap-4">
+        <div className="h-12 w-12 shrink-0 rounded-full bg-gray-800" />
+        <div className="flex flex-col justify-center gap-1">
+          <div className="flex h-[18px] items-center">
+            <div className="h-4 w-24 rounded bg-gray-800" />
+          </div>
+          <div className="flex h-5 items-center">
+            <div className="h-3.5 w-36 rounded bg-gray-800/70" />
+          </div>
+          <div className="flex h-4 items-center">
+            <div className="h-3 w-16 rounded bg-gray-800/50" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  const allMigraines = useQuery(api.migraines.getAll);
+  const allMigraines = useCachedQuery(api.migraines.getAll, "migraines");
   const createMigraine = useMutation(api.migraines.create);
   const updateMigraine = useMutation(api.migraines.update);
   const deleteMigraine = useMutation(api.migraines.deleteMigraine);
 
   // Meals
-  const allMeals = useQuery(api.meals.getAll);
+  const allMeals = useCachedQuery(api.meals.getAll, "meals");
   const createMeal = useMutation(api.meals.create);
   const updateMeal = useMutation(api.meals.update);
   const deleteMealMutation = useMutation(api.meals.deleteMeal);
@@ -402,13 +429,7 @@ export default function Home() {
     return details.level === filter;
   });
 
-  if (allMigraines === undefined) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background-dark text-text-dark">
-        Loading...
-      </div>
-    );
-  }
+  const isLoadingMigraines = allMigraines === undefined;
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
@@ -418,7 +439,7 @@ export default function Home() {
         {view === "list" && (
           <>
             {/* Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-12 pb-4">
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-text-dark">Migraines</h2>
                 <button
@@ -473,6 +494,10 @@ export default function Home() {
             {/* List */}
             <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-2 pb-24">
               <div className="flex flex-col gap-3">
+                {isLoadingMigraines &&
+                  Array.from({ length: 6 }, (_, i) => (
+                    <MigraineCardSkeleton key={i} />
+                  ))}
                 {displayedMigraines.map((migraine) => {
                   const details = getSeverityDetails(migraine.severity);
                   const isActive = migraine.endTime === null;
@@ -533,16 +558,18 @@ export default function Home() {
                     </div>
                   );
                 })}
-                {displayedMigraines.length === 0 && (
+                {!isLoadingMigraines && displayedMigraines.length === 0 && (
                   <div className="py-10 text-center text-gray-500">
                     <p>No entries found.</p>
                     <p className="text-sm mt-1">Tap &quot;Add Migraine&quot; to log one.</p>
                   </div>
                 )}
               </div>
-              <div className="mt-6 flex h-20 items-center justify-center opacity-50">
-                <p className="text-xs text-gray-600">End of records</p>
-              </div>
+              {!isLoadingMigraines && (
+                <div className="mt-6 flex h-20 items-center justify-center opacity-50">
+                  <p className="text-xs text-gray-600">End of records</p>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -551,7 +578,7 @@ export default function Home() {
         {view === "calendar" && (
           <>
             {/* Calendar Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-12 pb-4">
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => {
@@ -765,7 +792,7 @@ export default function Home() {
         {view === "meals" && (
           <>
             {/* Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-12 pb-4">
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-text-dark">Meals</h2>
                 <button
@@ -824,7 +851,7 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {(allMeals || []).length === 0 && (
+                {allMeals !== undefined && allMeals.length === 0 && (
                   <div className="py-10 text-center text-gray-500">
                     <span className="material-symbols-outlined text-[48px] text-gray-600 mb-2 block">
                       restaurant
@@ -845,7 +872,7 @@ export default function Home() {
         {(view === "newMeal" || view === "editMeal") && (
           <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
             {/* Header */}
-            <header className="flex-shrink-0 flex items-center justify-between px-6 py-6">
+            <header className="flex-shrink-0 flex items-center justify-between px-6 pb-6 pt-safe-bar">
               <button
                 onClick={() => {
                   resetMealForm();
@@ -982,7 +1009,7 @@ export default function Home() {
         {(view === "new" || view === "edit") && (
           <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
             {/* Header */}
-            <header className="flex-shrink-0 flex items-center justify-between px-6 py-6">
+            <header className="flex-shrink-0 flex items-center justify-between px-6 pb-6 pt-safe-bar">
               <button
                 onClick={() => {
                   resetForm();

@@ -20,6 +20,29 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Installing on iPhone (PWA)
+
+The app is an installable web app. Deploy it, open the HTTPS URL in **Safari**,
+tap **Share → Add to Home Screen**. It then launches full screen with a launch
+image, no browser chrome, and boots from on-device caches.
+
+| Piece | Where |
+| --- | --- |
+| Manifest | `app/manifest.ts` |
+| iOS meta tags, launch images, viewport | `app/layout.tsx` |
+| Service worker (shell + asset cache, update flow) | `public/sw.js`, `app/ServiceWorkerRegistration.tsx` |
+| Last-known data painted before Convex connects | `lib/use-cached-query.ts` |
+| Safe-area / touch behaviour | `app/globals.css` |
+
+Things to know:
+
+- **The service worker only runs in production builds** (`bun run build && bun run start`). `bun run dev` never registers it.
+- **Updates apply on the next launch.** A launch is served from cache while the new version downloads in the background; the launch after that runs it.
+- **Changing the icon**: edit `scripts/pwa/icon.svg`, then `bun run pwa-assets` (regenerates the home-screen icons, favicon and all launch images).
+- **New device sizes**: iOS shows a launch image only on an exact size match. Add the device to `lib/ios-splash-devices.json` and run `bun run pwa-assets`.
+- **Adding a Material Symbols icon**: the icon font is a vendored subset. Run `bun run icons` afterwards or the new icon shows up as its raw name (e.g. "bolt").
+- Convex data is cached in `localStorage` (key prefix `mygraines:v1:`); bump the version in `lib/use-cached-query.ts` if a query's result shape changes.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

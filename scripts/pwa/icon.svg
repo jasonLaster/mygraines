@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!--
+    App icon source (1024x1024, full-bleed, no rounded corners; iOS applies its
+    own mask). Replace this file and run `bun run pwa-assets` to regenerate every
+    icon and launch image. Keep the artwork inside the central ~80% so it
+    survives maskable cropping on Android.
+
+    The cloud is the Material Symbols "cloud" outline (Apache-2.0), matching the
+    weather glyphs used for severity inside the app.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C084FC"/>
+      <stop offset="1" stop-color="#7E22CE"/>
+    </linearGradient>
+    <path id="bolt" d="M598 410 L432 640 L530 640 L468 806 L660 556 L556 556 L628 410 Z"/>
+    <mask id="cut">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <use href="#bolt" fill="#000" stroke="#000" stroke-width="58" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g mask="url(#cut)">
+    <path transform="translate(224 130) scale(24)" fill="#fff"
+          d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+  </g>
+  <use href="#bolt" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/>
+</svg>

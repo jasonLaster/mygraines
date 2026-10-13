@@ -1,0 +1,29 @@
+import type { MetadataRoute } from "next";
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    id: "/",
+    name: "My Migraines",
+    short_name: "Migraines",
+    description: "A simple migraine tracker.",
+    start_url: "/",
+    scope: "/",
+    display: "standalone",
+    orientation: "portrait",
+    // Shown by Android/Chrome while the app launches; iOS uses the launch
+    // images declared in app/layout.tsx instead.
+    background_color: "#121212",
+    theme_color: "#121212",
+    icons: [
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      // The artwork sits inside the maskable safe zone, so one file serves both.
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+    ],
+  };
+}
