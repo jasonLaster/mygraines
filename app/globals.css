@@ -65,6 +65,13 @@ body {
 
 /* --- Native-app feel ------------------------------------------------------ */
 
+html,
+body {
+  height: 100%;
+  /* The app is one full-screen surface; its own lists scroll internally. */
+  overflow: hidden;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;

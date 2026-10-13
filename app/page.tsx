@@ -641,16 +641,23 @@ export default function Home() {
   const lastMigraine = migraines.find((m) => m.endTime !== null);
 
   return (
-    // Pinned to the viewport rather than sized with vh/dvh: iOS standalone mode
-    // reports those inconsistently, which left the app shorter than the screen.
-    <div className="fixed inset-0 flex w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
+    // Sized from --app-height (see lib/app-height.ts), not bottom-anchored to
+    // the viewport: iOS standalone mode reports a viewport shorter than the
+    // screen, which left a dead strip under the bottom nav. Fixed (rather than
+    // absolute) so a root taller than that viewport can't make the page
+    // scrollable. 100dvh is the fallback everywhere else.
+    <div
+      data-app-root
+      style={{ height: "var(--app-height, 100dvh)" }}
+      className="fixed left-0 top-0 flex w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark"
+    >
       <div className="relative mx-auto flex h-full w-full max-w-md flex-col overflow-hidden bg-background-dark">
 
         {/* --- Home: log a new migraine, or edit the one in progress --- */}
         {view === "home" && (
           <>
             <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
-              <h2 className="text-2xl font-bold text-text-dark">Mygraines</h2>
+              <h2 data-layout-debug className="text-2xl font-bold text-text-dark">Mygraines</h2>
             </div>
             <div className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto px-6 pb-28">
               {isLoadingMigraines ? (
@@ -1459,7 +1466,8 @@ export default function Home() {
           view === "calendar" ||
           (SHOW_MEALS && view === "meals")) && (
           <div
-            className="fixed bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm"
+            data-app-nav
+            className="absolute bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm"
             style={{
               paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 1.5rem))",
             }}

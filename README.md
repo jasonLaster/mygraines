@@ -41,6 +41,7 @@ Things to know:
 - **Changing the icon**: edit `scripts/pwa/icon.svg`, then `bun run pwa-assets` (regenerates the home-screen icons, favicon and all launch images).
 - **New device sizes**: iOS shows a launch image only on an exact size match. Add the device to `lib/ios-splash-devices.json` and run `bun run pwa-assets`.
 - **Adding a Material Symbols icon**: the icon font is a vendored subset. Run `bun run icons` afterwards or the new icon shows up as its raw name (e.g. "bolt").
+- **iOS standalone layout**: iOS home-screen apps can report a viewport ~59px shorter than the screen, so the app is sized from `screen.height` (`lib/app-height.ts`, inline in `<head>`). To diagnose layout problems on a phone, tap the "Mygraines" title five times quickly for a measurements panel (tap it to close).
 - **Auto-stop at midnight**: an open-ended migraine ends at the first local midnight after it started (`lib/auto-stop.ts`). The UI applies this instantly, and the app writes it to Convex whenever it is open (it is not a server cron, so a migraine left open overnight is closed the next time the app loads, with the correct 12:00 AM end time).
 - **Meals are hidden**: set `SHOW_MEALS = true` in `app/page.tsx` to bring the Meals tab and screens back. The data and Convex functions are untouched.
 - Convex data is cached in `localStorage` (key prefix `mygraines:v1:`); bump the version in `lib/use-cached-query.ts` if a query's result shape changes.

@@ -5,6 +5,8 @@ import { preconnect } from "react-dom";
 import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { ServiceWorkerRegistration } from "./ServiceWorkerRegistration";
+import { AppHeightSync } from "./AppHeightSync";
+import { APP_HEIGHT_SCRIPT } from "@/lib/app-height";
 import splashDevices from "@/lib/ios-splash-devices.json";
 
 // Fonts are self-hosted and preloaded by next/font, so first paint never waits
@@ -86,9 +88,14 @@ export default function RootLayout({
       // Inline so the very first paint is already dark, before any CSS arrives.
       style={{ backgroundColor: BACKGROUND }}
     >
+      <head>
+        {/* Sizes the app from the real screen height before first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: APP_HEIGHT_SCRIPT }} />
+      </head>
       <body className="antialiased bg-background-dark text-text-dark">
         <ConvexClientProvider>{children}</ConvexClientProvider>
         <ServiceWorkerRegistration />
+        <AppHeightSync />
       </body>
     </html>
   );
