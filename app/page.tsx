@@ -8,6 +8,13 @@ import { FoodMultiSelect } from "@/components/FoodMultiSelect";
 import { TOP_FOODS } from "@/lib/foods";
 import { useCachedQuery } from "@/lib/use-cached-query";
 import { effectiveEndTime, findOverdue } from "@/lib/auto-stop";
+import {
+  currentSeverity,
+  peakSeverity,
+  readingsOf,
+  type Reading,
+} from "@/lib/severity";
+import { SeverityChart } from "./SeverityChart";
 
 // --- Constants ---
 const currentYear = new Date().getFullYear();
@@ -28,6 +35,14 @@ const TRIGGERS = [
 const SHOW_MEALS = false;
 
 // --- Helpers ---
+
+// Local "YYYY-MM-DDTHH:mm" for <input type="datetime-local">.
+function toLocalInput(timestamp: number): string {
+  const d = new Date(timestamp);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+}
 
 function formatDateShort(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString("en-US", {
@@ -201,7 +216,10 @@ function ActiveMigraine({
   now: number;
   onEdit: (migraine: Doc<"migraines">) => void;
 }) {
-  const details = getSeverityDetails(migraine.severity);
+  const readings = readingsOf(migraine);
+  const current = currentSeverity(readings);
+  const peak = peakSeverity(readings);
+  const details = getSeverityDetails(current);
   const startedToday = isSameDay(new Date(migraine.startTime), new Date(now));
   const triggers = migraine.triggers ?? [];
 
@@ -225,11 +243,28 @@ function ActiveMigraine({
         {startedToday ? "" : `${formatDateShort(migraine.startTime)} at `}
         {formatTime(migraine.startTime)}
       </p>
-      <span
-        className={`mt-4 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${details.bgClass} ${details.textClass} ${details.borderClass}`}
-      >
-        {details.level} · {migraine.severity}/10
-      </span>
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+        <span
+          className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${details.bgClass} ${details.textClass} ${details.borderClass}`}
+        >
+          Now · {details.level} · {current}/10
+        </span>
+        {peak > current && (
+          <span className="rounded-full border border-gray-800 bg-surface-dark px-3 py-1 text-xs font-bold uppercase tracking-wide text-gray-400">
+            Peak {peak}/10
+          </span>
+        )}
+      </div>
+      {readings.length > 1 && (
+        <div className="mt-5 w-full rounded-2xl border border-gray-800 bg-surface-dark p-3">
+          <SeverityChart
+            readings={readings}
+            startTime={migraine.startTime}
+            endTime={null}
+            now={now}
+          />
+        </div>
+      )}
       {triggers.length > 0 && (
         <div className="mt-3 flex flex-wrap justify-center gap-2">
           {triggers.map((trigger) => (
@@ -349,7 +384,13 @@ export default function Home() {
   const [filter, setFilter] = useState<"All" | SeverityLevel>("All");
 
   // Form State
-  const [severity, setSeverity] = useState(5);
+  // Severity over time for the migraine being edited (see lib/severity.ts).
+  // `at: 0` is a placeholder; the first reading is anchored to the start time.
+  const [formReadings, setFormReadings] = useState<Reading[]>([
+    { at: 0, severity: 5 },
+  ]);
+  // How many of formReadings were already saved; anything after is a new change.
+  const [savedReadingCount, setSavedReadingCount] = useState(0);
   // We use unified state for form dates now
   const [formStartTime, setFormStartTime] = useState("");
   const [formEndTime, setFormEndTime] = useState("");
@@ -414,13 +455,73 @@ export default function Home() {
   };
 
   const resetForm = () => {
-    setSeverity(5);
+    setFormReadings([{ at: 0, severity: 5 }]);
+    setSavedReadingCount(0);
     setFormStartTime("");
     setFormEndTime("");
     setNotes("");
     setSelectedTriggers([]);
     setEditingId(null);
   };
+
+  // The first reading is always the start of the migraine.
+  const readingsToSave = (startTime: number): Reading[] =>
+    formReadings.map((r, i) => (i === 0 ? { ...r, at: startTime } : r));
+
+  // The severity control edits the latest reading. On a migraine that is still
+  // going, moving it away from the last saved value records a NEW reading (so
+  // the timeline shows 5 -> 2); moving it back drops that pending change.
+  const formIsOngoing = view === "edit" && formEndTime === "";
+  const formSeverity = currentSeverity(formReadings);
+
+  const changeSeverity = (value: number) => {
+    setFormReadings((prev) => {
+      const last = prev[prev.length - 1];
+      if (
+        formIsOngoing &&
+        prev.length === savedReadingCount &&
+        value !== last.severity
+      ) {
+        return [...prev, { at: Date.now(), severity: value }];
+      }
+      if (
+        formIsOngoing &&
+        prev.length === savedReadingCount + 1 &&
+        value === prev[savedReadingCount - 1].severity
+      ) {
+        return prev.slice(0, -1);
+      }
+      return [...prev.slice(0, -1), { ...last, severity: value }];
+    });
+  };
+
+  const bumpReading = (index: number, delta: number) =>
+    setFormReadings((prev) =>
+      prev.map((r, i) =>
+        i === index
+          ? { ...r, severity: Math.min(10, Math.max(1, r.severity + delta)) }
+          : r,
+      ),
+    );
+
+  const moveReading = (index: number, at: number) => {
+    if (Number.isNaN(at)) return;
+    setFormReadings((prev) =>
+      prev.map((r, i) => (i === index ? { ...r, at } : r)).sort((a, b) => a.at - b.at),
+    );
+  };
+
+  const removeReading = (index: number) =>
+    setFormReadings((prev) => prev.filter((_, i) => i !== index));
+
+  const addReading = () =>
+    setFormReadings((prev) => {
+      const last = prev[prev.length - 1];
+      const at = formEndTime
+        ? new Date(formEndTime).getTime()
+        : Math.max(Date.now(), last.at);
+      return [...prev, { at: Math.max(at, last.at), severity: last.severity }];
+    });
 
   const handleCreate = async () => {
     try {
@@ -432,7 +533,8 @@ export default function Home() {
       await createMigraine({
         startTime,
         endTime,
-        severity,
+        severity: peakSeverity(formReadings),
+        readings: readingsToSave(startTime),
         notes,
         triggers: selectedTriggers,
       });
@@ -455,9 +557,9 @@ export default function Home() {
 
       await updateMigraine({
         id: editingId,
-        severity,
         startTime,
         endTime,
+        readings: readingsToSave(startTime ?? formReadings[0].at),
         notes,
         triggers: selectedTriggers,
       });
@@ -495,7 +597,9 @@ export default function Home() {
   const startEdit = (migraine: Doc<"migraines">) => {
     setBackView(view === "list" || view === "calendar" ? view : "home");
     setEditingId(migraine._id);
-    setSeverity(migraine.severity);
+    const saved = readingsOf(migraine);
+    setFormReadings(saved);
+    setSavedReadingCount(saved.length);
 
     // Convert timestamp to local datetime string
     const start = new Date(migraine.startTime);
@@ -772,6 +876,15 @@ export default function Home() {
                             {formatDuration(
                               migraine.startTime,
                               migraine.endTime
+                            )}
+                            {readingsOf(migraine).length > 1 && (
+                              <span className="text-gray-600">
+                                {" "}
+                                ·{" "}
+                                {readingsOf(migraine)
+                                  .map((r) => r.severity)
+                                  .join(" → ")}
+                              </span>
                             )}
                           </p>
                         </div>
@@ -1328,7 +1441,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Intensity Section */}
+                {/* Severity over time */}
                 <div>
                   <div className="flex items-center gap-2 mb-3 text-gray-200 font-bold">
                     <span className="material-symbols-outlined text-[20px]">
@@ -1337,15 +1450,22 @@ export default function Home() {
                     <h3>Intensity Level</h3>
                   </div>
                   <div className="rounded-3xl bg-surface-dark p-8 border border-gray-800 flex flex-col items-center">
+                    <div className="text-xs font-medium text-gray-500 mb-1">
+                      {view === "new"
+                        ? "Starting at"
+                        : formIsOngoing
+                          ? "Right now"
+                          : "At the end"}
+                    </div>
                     <div className="text-6xl font-bold text-text-dark mb-1">
-                      {severity}
+                      {formSeverity}
                     </div>
                     <div className="text-xs font-bold tracking-widest text-accent-purple uppercase mb-8">
-                      {severity >= 8
+                      {formSeverity >= 8
                         ? "Severe"
-                        : severity >= 5
+                        : formSeverity >= 5
                           ? "Moderate"
-                          : severity >= 3
+                          : formSeverity >= 3
                             ? "Mild"
                             : "Low"}
                     </div>
@@ -1359,8 +1479,8 @@ export default function Home() {
                         type="range"
                         min="1"
                         max="10"
-                        value={severity}
-                        onChange={(e) => setSeverity(Number(e.target.value))}
+                        value={formSeverity}
+                        onChange={(e) => changeSeverity(Number(e.target.value))}
                         className="w-full accent-primary h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                       />
                       {/* Ticks visual approximation */}
@@ -1371,6 +1491,97 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
+
+                  {formReadings.length > 1 && (
+                    <div className="mt-4 rounded-3xl bg-surface-dark p-4 border border-gray-800">
+                      <SeverityChart
+                        readings={readingsToSave(
+                          formStartTime ? new Date(formStartTime).getTime() : now,
+                        )}
+                        startTime={
+                          formStartTime ? new Date(formStartTime).getTime() : now
+                        }
+                        endTime={
+                          formEndTime ? new Date(formEndTime).getTime() : null
+                        }
+                        now={now}
+                      />
+                    </div>
+                  )}
+
+                  {formReadings.length > 1 && (
+                    <div className="mt-4 space-y-2">
+                      {formReadings.map((reading, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-3 rounded-2xl border border-gray-800 bg-surface-dark px-4 py-3"
+                        >
+                          <div className="relative min-w-0 flex-1">
+                            <p className="text-xs text-gray-500">
+                              {index === 0 ? "Start" : "Change"}
+                            </p>
+                            <p className="truncate text-sm font-bold text-text-dark">
+                              {formatFriendlyDate(
+                                index === 0 ? formStartTime : toLocalInput(reading.at),
+                              )}
+                            </p>
+                            {index > 0 && (
+                              <input
+                                type="datetime-local"
+                                value={toLocalInput(reading.at)}
+                                onChange={(e) =>
+                                  moveReading(index, new Date(e.target.value).getTime())
+                                }
+                                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                              />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => bumpReading(index, -1)}
+                              aria-label="Decrease severity"
+                              className="h-8 w-8 rounded-full border border-gray-700 text-lg leading-none text-gray-300 active:scale-95"
+                            >
+                              −
+                            </button>
+                            <span className="w-6 text-center text-lg font-bold text-text-dark">
+                              {reading.severity}
+                            </span>
+                            <button
+                              onClick={() => bumpReading(index, 1)}
+                              aria-label="Increase severity"
+                              className="h-8 w-8 rounded-full border border-gray-700 text-lg leading-none text-gray-300 active:scale-95"
+                            >
+                              +
+                            </button>
+                          </div>
+                          {index > 0 ? (
+                            <button
+                              onClick={() => removeReading(index)}
+                              aria-label="Remove this change"
+                              className="p-1 text-gray-600 hover:text-red-400"
+                            >
+                              <span className="material-symbols-outlined">
+                                delete
+                              </span>
+                            </button>
+                          ) : (
+                            <span className="w-8" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={addReading}
+                    className="mt-4 flex items-center gap-2 text-sm font-medium text-primary active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      add
+                    </span>
+                    Add a severity change
+                  </button>
                 </div>
 
                 {/* Triggers */}
