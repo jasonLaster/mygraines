@@ -33,16 +33,28 @@ const getServerSnapshot = () => undefined;
  * returned, so a relaunched app paints real data immediately instead of a
  * loading state. Once live data arrives it always wins.
  *
- * `undefined` means "nothing cached and nothing loaded yet".
+ * - `data` is `undefined` when nothing is cached and nothing has loaded yet.
+ * - `isLive` is true only for server-confirmed data. Anything that WRITES based
+ *   on what it reads must check it: the cached snapshot can be stale.
+ * - `skip` unsubscribes entirely (and ignores the cache).
  */
 export function useCachedQuery<
   Query extends FunctionReference<"query", "public", Record<string, never>>,
->(query: Query, cacheKey: string): FunctionReturnType<Query> | undefined {
+>(
+  query: Query,
+  cacheKey: string,
+  options: { skip?: boolean } = {},
+): { data: FunctionReturnType<Query> | undefined; isLive: boolean } {
+  const skip = options.skip === true;
+
   // `useQuery`'s rest-args type can't be resolved for a generic query, but this
   // hook only accepts queries without arguments.
   const live = (
-    useQuery as (query: Query) => FunctionReturnType<Query> | undefined
-  )(query);
+    useQuery as (
+      query: Query,
+      args?: "skip",
+    ) => FunctionReturnType<Query> | undefined
+  )(query, skip ? "skip" : undefined);
 
   // Server render and hydration see `undefined` (matching the prerendered
   // HTML); React then re-renders with the cached value before the next paint.
@@ -61,5 +73,8 @@ export function useCachedQuery<
     }
   }, [live, cacheKey]);
 
-  return live === undefined ? cached : live;
+  if (skip) return { data: undefined, isLive: false };
+  return live === undefined
+    ? { data: cached, isLive: false }
+    : { data: live, isLive: true };
 }

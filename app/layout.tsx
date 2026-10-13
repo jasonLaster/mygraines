@@ -29,12 +29,13 @@ const materialSymbols = localFont({
 const BACKGROUND = "#121212";
 
 export const metadata: Metadata = {
-  title: "My Migraines",
+  title: "Mygraines",
   description: "A simple migraine tracker.",
-  applicationName: "My Migraines",
+  applicationName: "Mygraines",
   appleWebApp: {
     capable: true,
-    title: "Migraines",
+    // Label under the home-screen icon.
+    title: "Mygraines",
     // Content draws under the status bar, so the launch image, status bar and
     // app all share one background and nothing flashes between them.
     statusBarStyle: "black-translucent",

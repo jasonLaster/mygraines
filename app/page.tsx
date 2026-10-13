@@ -2,11 +2,12 @@
 
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Id, Doc } from "@/convex/_generated/dataModel";
 import { FoodMultiSelect } from "@/components/FoodMultiSelect";
 import { TOP_FOODS } from "@/lib/foods";
 import { useCachedQuery } from "@/lib/use-cached-query";
+import { effectiveEndTime, findOverdue } from "@/lib/auto-stop";
 
 // --- Constants ---
 const currentYear = new Date().getFullYear();
@@ -21,6 +22,10 @@ const TRIGGERS = [
   "Dehydration",
   "Other",
 ];
+
+// Meal tracking is built (data, screens, backend) but hidden from the UI for
+// now. Flip this to bring the Meals tab and screens back.
+const SHOW_MEALS = false;
 
 // --- Helpers ---
 
@@ -171,20 +176,172 @@ function MigraineCardSkeleton() {
   );
 }
 
+// --- Home screen pieces ---
+
+function HomeSkeleton() {
+  return (
+    <div aria-hidden className="flex animate-pulse flex-col items-center">
+      <div className="h-24 w-24 rounded-full bg-gray-800" />
+      <div className="mt-6 h-4 w-40 rounded bg-gray-800/70" />
+      <div className="mt-4 h-12 w-32 rounded bg-gray-800" />
+      <div className="mt-8 h-14 w-full rounded-full bg-gray-800" />
+    </div>
+  );
+}
+
+// The migraine that is happening now: how long, how bad, and a way to edit it.
+function ActiveMigraine({
+  migraine,
+  others,
+  now,
+  onEdit,
+}: {
+  migraine: Doc<"migraines">;
+  others: Doc<"migraines">[];
+  now: number;
+  onEdit: (migraine: Doc<"migraines">) => void;
+}) {
+  const details = getSeverityDetails(migraine.severity);
+  const startedToday = isSameDay(new Date(migraine.startTime), new Date(now));
+  const triggers = migraine.triggers ?? [];
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <div
+        className={`flex h-24 w-24 items-center justify-center rounded-full border ${details.bgClass} ${details.borderClass} ${details.colorClass}`}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: 44 }}>
+          {details.icon}
+        </span>
+      </div>
+      <p className="mt-6 text-sm font-bold uppercase tracking-wide text-primary">
+        Migraine in progress
+      </p>
+      <p className="mt-2 text-5xl font-bold text-text-dark">
+        {formatDuration(migraine.startTime, Math.max(now, migraine.startTime))}
+      </p>
+      <p className="mt-2 text-gray-400">
+        Started{" "}
+        {startedToday ? "" : `${formatDateShort(migraine.startTime)} at `}
+        {formatTime(migraine.startTime)}
+      </p>
+      <span
+        className={`mt-4 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${details.bgClass} ${details.textClass} ${details.borderClass}`}
+      >
+        {details.level} · {migraine.severity}/10
+      </span>
+      {triggers.length > 0 && (
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {triggers.map((trigger) => (
+            <span
+              key={trigger}
+              className="rounded-full border border-gray-800 bg-surface-dark px-3 py-1 text-xs font-medium text-gray-300"
+            >
+              {trigger}
+            </span>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={() => onEdit(migraine)}
+        className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-4 text-base font-bold text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
+      >
+        <span className="material-symbols-outlined">edit</span>
+        Edit migraine
+      </button>
+      <p className="mt-4 text-xs text-gray-500">Ends automatically at midnight</p>
+
+      {others.length > 0 && (
+        <div className="mt-8 w-full text-left">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+            Also in progress
+          </p>
+          <div className="flex flex-col gap-2">
+            {others.map((other) => (
+              <button
+                key={other._id}
+                onClick={() => onEdit(other)}
+                className="flex items-center justify-between rounded-xl border border-gray-800 bg-surface-dark px-4 py-3 transition-transform active:scale-[0.98]"
+              >
+                <span className="text-sm font-medium text-text-dark">
+                  {formatTime(other.startTime)} ·{" "}
+                  {getSeverityDetails(other.severity).level}
+                </span>
+                <span className="material-symbols-outlined text-gray-600">
+                  chevron_right
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Nothing in progress: invite the user to log one.
+function NoActiveMigraine({
+  last,
+  onCreate,
+}: {
+  last: Doc<"migraines"> | undefined;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center text-center">
+      <div className="flex h-24 w-24 items-center justify-center rounded-full border border-gray-800 bg-surface-dark text-accent-purple">
+        <span className="material-symbols-outlined" style={{ fontSize: 44 }}>
+          light_mode
+        </span>
+      </div>
+      <h3 className="mt-6 text-2xl font-bold text-text-dark">
+        No migraine right now
+      </h3>
+      <p className="mt-2 max-w-xs text-gray-400">
+        Log one when it starts and it will be tracked until it ends.
+      </p>
+      <button
+        onClick={onCreate}
+        className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-4 text-base font-bold text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
+      >
+        <span className="material-symbols-outlined">add</span>
+        Log a migraine
+      </button>
+      {last && (
+        <p className="mt-6 text-xs text-gray-500">
+          Last migraine: {formatDateShort(last.startTime)} ·{" "}
+          {formatDuration(last.startTime, last.endTime)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
-  const allMigraines = useCachedQuery(api.migraines.getAll, "migraines");
+  const { data: allMigraines, isLive: migrainesAreLive } = useCachedQuery(
+    api.migraines.getAll,
+    "migraines",
+  );
   const createMigraine = useMutation(api.migraines.create);
   const updateMigraine = useMutation(api.migraines.update);
   const deleteMigraine = useMutation(api.migraines.deleteMigraine);
 
   // Meals
-  const allMeals = useCachedQuery(api.meals.getAll, "meals");
+  const { data: allMeals } = useCachedQuery(api.meals.getAll, "meals", {
+    skip: !SHOW_MEALS,
+  });
   const createMeal = useMutation(api.meals.create);
   const updateMeal = useMutation(api.meals.update);
   const deleteMealMutation = useMutation(api.meals.deleteMeal);
 
   // View State
-  const [view, setView] = useState<"list" | "calendar" | "new" | "edit" | "meals" | "newMeal" | "editMeal">("list");
+  const [view, setView] = useState<
+    "home" | "list" | "calendar" | "new" | "edit" | "meals" | "newMeal" | "editMeal"
+  >("home");
+  // Where the new/edit form goes back to: home, history or the calendar.
+  const [backView, setBackView] = useState<"home" | "list" | "calendar">("home");
+  // Refreshed every 30s and on resume so durations tick and midnight is noticed.
+  const [now, setNow] = useState(() => Date.now());
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -208,6 +365,43 @@ export default function Home() {
   const [mealTimestamp, setMealTimestamp] = useState("");
   const [editingMealId, setEditingMealId] = useState<Id<"meals"> | null>(null);
   const mealInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const interval = setInterval(tick, 30_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
+
+  // Open-ended migraines stop at the first midnight after they started (see
+  // lib/auto-stop.ts). Everything rendered uses these derived end times, so the
+  // UI is right immediately, even before the write below has happened.
+  const migraines = useMemo(
+    () =>
+      (allMigraines ?? []).map((m) => ({
+        ...m,
+        endTime: effectiveEndTime(m, now),
+      })),
+    [allMigraines, now],
+  );
+
+  // Persist the stop. Only ever driven by live data: the cached snapshot can be
+  // stale, and writing from it could overwrite an end time set on another device.
+  const sweptIds = useRef(new Set<string>());
+  useEffect(() => {
+    if (!migrainesAreLive || !allMigraines) return;
+    for (const m of allMigraines) {
+      if (m.endTime !== null) sweptIds.current.delete(m._id);
+    }
+    for (const { id, endTime } of findOverdue(allMigraines, now)) {
+      if (sweptIds.current.has(id)) continue;
+      sweptIds.current.add(id);
+      updateMigraine({ id, endTime }).catch(() => sweptIds.current.delete(id));
+    }
+  }, [allMigraines, migrainesAreLive, now, updateMigraine]);
 
   // -- Handlers --
 
@@ -243,7 +437,7 @@ export default function Home() {
         triggers: selectedTriggers,
       });
       resetForm();
-      setView("list");
+      setView(backView);
     } catch (error) {
       alert(
         error instanceof Error ? error.message : "Failed to create migraine"
@@ -268,7 +462,7 @@ export default function Home() {
         triggers: selectedTriggers,
       });
       resetForm();
-      setView("list");
+      setView(backView);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to update");
     }
@@ -280,13 +474,26 @@ export default function Home() {
     try {
       await deleteMigraine({ id: editingId });
       resetForm();
-      setView("list");
+      setView(backView);
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to delete");
     }
   };
 
+  const startNew = () => {
+    resetForm();
+    const d = new Date();
+    setFormStartTime(
+      new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16)
+    );
+    setBackView(view === "list" || view === "calendar" ? view : "home");
+    setView("new");
+  };
+
   const startEdit = (migraine: Doc<"migraines">) => {
+    setBackView(view === "list" || view === "calendar" ? view : "home");
     setEditingId(migraine._id);
     setSeverity(migraine.severity);
 
@@ -423,42 +630,54 @@ export default function Home() {
 
   // -- Filtering --
 
-  const displayedMigraines = (allMigraines || []).filter((m) => {
+  const displayedMigraines = migraines.filter((m) => {
     if (filter === "All") return true;
     const details = getSeverityDetails(m.severity);
     return details.level === filter;
   });
 
   const isLoadingMigraines = allMigraines === undefined;
+  const activeMigraines = migraines.filter((m) => m.endTime === null);
+  const lastMigraine = migraines.find((m) => m.endTime !== null);
 
   return (
-    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
+    // Pinned to the viewport rather than sized with vh/dvh: iOS standalone mode
+    // reports those inconsistently, which left the app shorter than the screen.
+    <div className="fixed inset-0 flex w-full flex-col overflow-hidden bg-background-dark font-display text-text-dark">
       <div className="relative mx-auto flex h-full w-full max-w-md flex-col overflow-hidden bg-background-dark">
 
-        {/* --- Main Content Area --- */}
+        {/* --- Home: log a new migraine, or edit the one in progress --- */}
+        {view === "home" && (
+          <>
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
+              <h2 className="text-2xl font-bold text-text-dark">Mygraines</h2>
+            </div>
+            <div className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto px-6 pb-28">
+              {isLoadingMigraines ? (
+                <HomeSkeleton />
+              ) : activeMigraines.length > 0 ? (
+                <ActiveMigraine
+                  migraine={activeMigraines[0]}
+                  others={activeMigraines.slice(1)}
+                  now={now}
+                  onEdit={startEdit}
+                />
+              ) : (
+                <NoActiveMigraine last={lastMigraine} onCreate={startNew} />
+              )}
+            </div>
+          </>
+        )}
+
+        {/* --- History (all migraines) --- */}
         {view === "list" && (
           <>
             {/* Header */}
             <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-text-dark">Migraines</h2>
+                <h2 className="text-2xl font-bold text-text-dark">History</h2>
                 <button
-                  onClick={() => {
-                    resetForm();
-                    const now = new Date();
-                    const localIso = new Date(
-                      now.getTime() - now.getTimezoneOffset() * 60000
-                    )
-                      .toISOString()
-                      .slice(0, 16);
-                    setFormStartTime(localIso);
-                    setFormEndTime("");
-                    setSeverity(5);
-                    setNotes("");
-                    setSelectedTriggers([]);
-                    setEditingId(null);
-                    setView("new");
-                  }}
+                  onClick={startNew}
                   className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-full font-medium text-sm shadow-lg shadow-purple-900/30 active:scale-95 transition-transform"
                 >
                   <span className="material-symbols-outlined text-[18px]">add</span>
@@ -641,15 +860,20 @@ export default function Home() {
                     const isToday = isSameDay(cellDate, today);
                     
                     // Find migraines for this day
-                    const dayMigraines = (allMigraines || []).filter((m) => {
+                    const dayMigraines = migraines.filter((m) => {
                       const startDate = new Date(m.startTime);
-                      const endDate = m.endTime ? new Date(m.endTime) : new Date();
-                      
-                      // Check if the migraine overlaps with this day
-                      const dayStart = new Date(calendarMonth.year, calendarMonth.month, day, 0, 0, 0);
-                      const dayEnd = new Date(calendarMonth.year, calendarMonth.month, day, 23, 59, 59);
-                      
-                      return startDate <= dayEnd && endDate >= dayStart;
+                      const endDate = m.endTime ? new Date(m.endTime) : new Date(now);
+
+                      // Overlap with [dayStart, nextDayStart). Half-open, so a
+                      // migraine that ends exactly at midnight (auto-stopped)
+                      // belongs to the day it started on, not the next one.
+                      const dayStart = new Date(calendarMonth.year, calendarMonth.month, day);
+                      const nextDayStart = new Date(calendarMonth.year, calendarMonth.month, day + 1);
+
+                      return (
+                        startDate < nextDayStart &&
+                        (endDate > dayStart || startDate >= dayStart)
+                      );
                     });
 
                     const hasMigraine = dayMigraines.length > 0;
@@ -789,7 +1013,7 @@ export default function Home() {
         )}
 
         {/* --- Meals List View --- */}
-        {view === "meals" && (
+        {SHOW_MEALS && view === "meals" && (
           <>
             {/* Header */}
             <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
@@ -869,7 +1093,7 @@ export default function Home() {
         )}
 
         {/* --- New / Edit Meal Views --- */}
-        {(view === "newMeal" || view === "editMeal") && (
+        {SHOW_MEALS && (view === "newMeal" || view === "editMeal") && (
           <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
             {/* Header */}
             <header className="flex-shrink-0 flex items-center justify-between px-6 pb-6 pt-safe-bar">
@@ -1013,7 +1237,7 @@ export default function Home() {
               <button
                 onClick={() => {
                   resetForm();
-                  setView("list");
+                  setView(backView);
                 }}
                 className="p-2 -ml-2 text-gray-400 hover:text-white"
               >
@@ -1229,8 +1453,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* --- Bottom Nav (List, Calendar & Meals Views) --- */}
-        {(view === "list" || view === "calendar" || view === "meals") && (
+        {/* --- Bottom Nav (Home, History, Calendar & Meals Views) --- */}
+        {(view === "home" ||
+          view === "list" ||
+          view === "calendar" ||
+          (SHOW_MEALS && view === "meals")) && (
           <div
             className="fixed bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm"
             style={{
@@ -1238,7 +1465,20 @@ export default function Home() {
             }}
           >
             <div className="flex h-14 items-center justify-around px-4">
-              {/* List Button */}
+              {/* Home Button */}
+              <button
+                onClick={() => setView("home")}
+                className={`flex flex-col items-center justify-center transition-colors ${
+                  view === "home" ? "text-primary" : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[24px]">
+                  home
+                </span>
+                <span className="mt-0.5 text-[10px] font-medium">Home</span>
+              </button>
+
+              {/* History Button */}
               <button
                 onClick={() => setView("list")}
                 className={`flex flex-col items-center justify-center transition-colors ${
@@ -1248,21 +1488,23 @@ export default function Home() {
                 <span className="material-symbols-outlined text-[24px]">
                   format_list_bulleted
                 </span>
-                <span className="mt-0.5 text-[10px] font-medium">Migraines</span>
+                <span className="mt-0.5 text-[10px] font-medium">History</span>
               </button>
 
-              {/* Meals Button */}
-              <button
-                onClick={() => setView("meals")}
-                className={`flex flex-col items-center justify-center transition-colors ${
-                  view === "meals" ? "text-primary" : "text-gray-500 hover:text-gray-300"
-                }`}
-              >
-                <span className="material-symbols-outlined text-[24px]">
-                  restaurant
-                </span>
-                <span className="mt-0.5 text-[10px] font-medium">Meals</span>
-              </button>
+              {/* Meals Button (hidden while SHOW_MEALS is false) */}
+              {SHOW_MEALS && (
+                <button
+                  onClick={() => setView("meals")}
+                  className={`flex flex-col items-center justify-center transition-colors ${
+                    view === "meals" ? "text-primary" : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[24px]">
+                    restaurant
+                  </span>
+                  <span className="mt-0.5 text-[10px] font-medium">Meals</span>
+                </button>
+              )}
 
               {/* Calendar Button */}
               <button

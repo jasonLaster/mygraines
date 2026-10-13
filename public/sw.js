@@ -1,4 +1,4 @@
-// Service worker for My Migraines.
+// Service worker for Mygraines.
 //
 // Goal: launching the installed app never waits on the network.
 //
@@ -26,7 +26,7 @@ const OFFLINE_HTML =
   '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
   '<body style="margin:0;display:grid;place-items:center;height:100vh;background:#121212;' +
   'color:#fcfcf8;font:16px system-ui,sans-serif;text-align:center;padding:24px">' +
-  "<p>You're offline.<br>Open My Migraines once while online to enable offline launch.</p>";
+  "<p>You're offline.<br>Open Mygraines once while online to enable offline launch.</p>";
 
 self.addEventListener("install", (event) => {
   // Seed the caches now so the very first relaunch is already instant. Never
