@@ -49,6 +49,23 @@
   padding-top: max(1.5rem, calc(env(safe-area-inset-top) + 0.5rem));
 }
 
+/*
+ * Bottom padding that keeps tappable content out of the strip below the layout
+ * viewport (--viewport-gap, see lib/app-height.ts), where iOS ignores taps.
+ * In a normal browser the gap is 0 and these collapse to the plain safe area.
+ */
+@utility pb-safe-nav {
+  padding-bottom: calc(
+    max(var(--viewport-gap, 0px), 1.5rem, env(safe-area-inset-bottom)) + 4.5rem
+  );
+}
+
+@utility pb-safe-bottom {
+  padding-bottom: calc(
+    max(var(--viewport-gap, 0px), env(safe-area-inset-bottom)) + 1.5rem
+  );
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #121212;

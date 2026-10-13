@@ -21,7 +21,13 @@ export const APP_HEIGHT_SCRIPT = `(function(){
         var gap = s - h;
         if (gap > 0 && gap <= 100) h = s;
       }
-      if (h > 0) document.documentElement.style.setProperty('--app-height', h + 'px');
+      if (h > 0) {
+        var root = document.documentElement.style;
+        root.setProperty('--app-height', h + 'px');
+        // How much of the app lies below the layout viewport. Taps there do not
+        // register on iOS, so tappable content is padded up by this much.
+        root.setProperty('--viewport-gap', Math.max(0, h - window.innerHeight) + 'px');
+      }
     } catch (e) {}
   }
   window.__updateAppHeight = update;

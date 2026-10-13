@@ -1,8 +1,9 @@
+import { useId } from "react";
 import type { Reading } from "@/lib/severity";
 
 const W = 320;
-const H = 136;
-const PAD = { left: 26, right: 12, top: 16, bottom: 26 };
+const H = 132;
+const PAD = { left: 14, right: 14, top: 18, bottom: 26 };
 
 function clock(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString("en-US", {
@@ -11,9 +12,13 @@ function clock(timestamp: number): string {
   });
 }
 
+const n = (value: number) => Number(value.toFixed(1));
+
 /**
- * Severity over the life of a migraine as a step line: a reading holds its
- * value until the next one. `endTime` null means still going, drawn up to `now`.
+ * Severity over the life of a migraine as a smooth curve. Between two readings
+ * the line eases from one level to the next (flat tangents at each reading, so
+ * it can never overshoot), then holds the latest level until the end. The
+ * highest point is marked. `endTime` null means still going, drawn up to `now`.
  */
 export function SeverityChart({
   readings,
@@ -28,6 +33,8 @@ export function SeverityChart({
   now: number;
   className?: string;
 }) {
+  const gradientId = `severity-fill-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
   const last = readings[readings.length - 1];
@@ -35,14 +42,25 @@ export function SeverityChart({
 
   const x = (at: number) =>
     PAD.left + ((at - startTime) / (spanEnd - startTime)) * plotW;
+  // Fixed 0-10 scale so heights are comparable between migraines.
   const y = (severity: number) => PAD.top + (1 - severity / 10) * plotH;
 
-  let line = `M ${x(readings[0].at)} ${y(readings[0].severity)}`;
-  for (let i = 1; i < readings.length; i++) {
-    line += ` H ${x(readings[i].at)} V ${y(readings[i].severity)}`;
+  const points = readings.map((r) => ({ x: x(r.at), y: y(r.severity) }));
+
+  let line = `M ${n(points[0].x)} ${n(points[0].y)}`;
+  for (let i = 1; i < points.length; i++) {
+    const from = points[i - 1];
+    const to = points[i];
+    const mid = (from.x + to.x) / 2;
+    line += ` C ${n(mid)} ${n(from.y)}, ${n(mid)} ${n(to.y)}, ${n(to.x)} ${n(to.y)}`;
   }
-  line += ` H ${x(spanEnd)}`;
-  const area = `${line} V ${y(0)} H ${x(readings[0].at)} Z`;
+  line += ` H ${n(x(spanEnd))}`;
+  const area = `${line} V ${n(y(0))} H ${n(points[0].x)} Z`;
+
+  const peakIndex = readings.reduce(
+    (best, r, i) => (r.severity > readings[best].severity ? i : best),
+    0,
+  );
 
   const summary = readings
     .map((r) => `${r.severity} at ${clock(r.at)}`)
@@ -55,60 +73,63 @@ export function SeverityChart({
       aria-label={`Severity over time: ${summary}`}
       className={className ?? "w-full"}
     >
-      {[5, 10].map((tick) => (
-        <g key={tick}>
-          <line
-            x1={PAD.left}
-            x2={W - PAD.right}
-            y1={y(tick)}
-            y2={y(tick)}
-            className="stroke-gray-700"
-            strokeWidth={1}
-            strokeDasharray="3 4"
-          />
-          <text
-            x={PAD.left - 6}
-            y={y(tick) + 3}
-            textAnchor="end"
-            className="fill-gray-500"
-            fontSize={9}
-          >
-            {tick}
-          </text>
-        </g>
-      ))}
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style={{ stopColor: "var(--primary)", stopOpacity: 0.42 }} />
+          <stop offset="1" style={{ stopColor: "var(--primary)", stopOpacity: 0 }} />
+        </linearGradient>
+      </defs>
 
-      <path d={area} className="fill-primary/15" />
+      {/* Baseline */}
+      <line
+        x1={PAD.left}
+        x2={W - PAD.right}
+        y1={y(0)}
+        y2={y(0)}
+        className="stroke-gray-800"
+        strokeWidth={1}
+      />
+
+      <path d={area} fill={`url(#${gradientId})`} />
       <path
         d={line}
         className="stroke-primary"
         fill="none"
-        strokeWidth={2.5}
+        strokeWidth={3}
         strokeLinejoin="round"
         strokeLinecap="round"
+        style={{ filter: "drop-shadow(0 0 5px rgba(168, 85, 247, 0.55))" }}
       />
 
-      {readings.map((r, i) => (
-        <g key={`${r.at}-${i}`}>
+      {readings.map((r, i) =>
+        i === peakIndex ? (
+          <g key={`${r.at}-${i}`}>
+            <circle
+              cx={points[i].x}
+              cy={points[i].y}
+              r={10}
+              className="fill-primary"
+              opacity={0.18}
+            />
+            <circle
+              cx={points[i].x}
+              cy={points[i].y}
+              r={5}
+              className="fill-primary stroke-background-dark"
+              strokeWidth={2}
+            />
+          </g>
+        ) : (
           <circle
-            cx={x(r.at)}
-            cy={y(r.severity)}
-            r={4}
+            key={`${r.at}-${i}`}
+            cx={points[i].x}
+            cy={points[i].y}
+            r={3.5}
             className="fill-background-dark stroke-primary"
             strokeWidth={2}
           />
-          <text
-            x={x(r.at)}
-            y={y(r.severity) - 9}
-            textAnchor="middle"
-            className="fill-gray-200"
-            fontSize={10}
-            fontWeight={700}
-          >
-            {r.severity}
-          </text>
-        </g>
-      ))}
+        ),
+      )}
 
       <text
         x={PAD.left}

@@ -15,10 +15,13 @@ import {
   type Reading,
 } from "@/lib/severity";
 import { SeverityChart } from "./SeverityChart";
+import { AppHeader } from "./AppHeader";
+import { MigraineCalendar, type MigraineDays } from "./MigraineCalendar";
+import { getSeverityDetails, type SeverityLevel } from "./severity-display";
 
 // --- Constants ---
 const currentYear = new Date().getFullYear();
-const minDate = `${currentYear}-01-01T00:00`;
+const minDate = `${currentYear - 5}-01-01T00:00`;
 const maxDate = `${currentYear}-12-31T23:59`;
 
 const TRIGGERS = [
@@ -92,63 +95,93 @@ function formatFriendlyDate(dateStr: string): string {
   return `${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${timeStr}`;
 }
 
-type SeverityLevel = "High" | "Moderate" | "Mild" | "Low";
-
-function getSeverityDetails(severity: number): {
-  level: SeverityLevel;
-  icon: string;
-  colorClass: string;
-  bgClass: string;
-  borderClass: string;
-  textClass: string;
-} {
-  if (severity >= 8) {
-    return {
-      level: "High",
-      icon: "thunderstorm",
-      colorClass: "text-red-400",
-      bgClass: "bg-red-900/20",
-      borderClass: "border-red-900/30",
-      textClass: "text-red-300",
-    };
-  } else if (severity >= 5) {
-    return {
-      level: "Moderate",
-      icon: "rainy",
-      colorClass: "text-orange-400",
-      bgClass: "bg-orange-900/20",
-      borderClass: "border-orange-900/30",
-      textClass: "text-orange-300",
-    };
-  } else if (severity >= 3) {
-    return {
-      level: "Mild",
-      icon: "cloud",
-      colorClass: "text-yellow-400",
-      bgClass: "bg-yellow-900/20",
-      borderClass: "border-yellow-900/30",
-      textClass: "text-yellow-300",
-    };
-  } else {
-    return {
-      level: "Low",
-      icon: "partly_cloudy_day",
-      colorClass: "text-blue-400",
-      bgClass: "bg-blue-900/20",
-      borderClass: "border-blue-900/30",
-      textClass: "text-blue-300",
-    };
-  }
-}
 
 // --- Calendar Helpers ---
 
-function getDaysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
+function startOfDay(timestamp: number | Date): Date {
+  const d = new Date(timestamp);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function getFirstDayOfMonth(year: number, month: number): number {
-  return new Date(year, month, 1).getDay();
+function formatDayLong(date: Date): string {
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+// Does the migraine overlap the local day [day, next day)? Half-open, so one
+// that ends exactly at midnight (e.g. auto-stopped) belongs to its start day.
+function overlapsDay(
+  migraine: { startTime: number; endTime: number | null },
+  day: Date,
+  now: number,
+): boolean {
+  const dayStart = startOfDay(day).getTime();
+  const nextDayStart = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate() + 1,
+  ).getTime();
+  const end = migraine.endTime ?? now;
+  return (
+    migraine.startTime < nextDayStart &&
+    (end > dayStart || migraine.startTime >= dayStart)
+  );
+}
+
+// Reusable confirmation sheet; the browser's confirm() is unreliable in
+// installed iOS web apps.
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-[70] flex items-center justify-center bg-black/60 px-8"
+      onClick={busy ? undefined : onCancel}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-xs rounded-2xl border border-gray-800 bg-surface-dark p-5 shadow-2xl"
+      >
+        <h3 className="text-lg font-bold text-text-dark">{title}</h3>
+        <p className="mt-1 text-sm text-gray-400">{body}</p>
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="flex-1 rounded-full border border-gray-700 py-3 font-medium text-text-dark transition-transform active:scale-95 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex-1 rounded-full bg-red-500 py-3 font-bold text-white transition-transform active:scale-95 disabled:opacity-70"
+          >
+            {busy ? "Deleting…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function isSameDay(date1: Date, date2: Date): boolean {
@@ -157,10 +190,6 @@ function isSameDay(date1: Date, date2: Date): boolean {
     date1.getMonth() === date2.getMonth() &&
     date1.getDate() === date2.getDate()
   );
-}
-
-function getMonthName(month: number): string {
-  return new Date(2000, month, 1).toLocaleDateString("en-US", { month: "long" });
 }
 
 // --- Components ---
@@ -382,6 +411,11 @@ export default function Home() {
     return { year: now.getFullYear(), month: now.getMonth() };
   });
   const [filter, setFilter] = useState<"All" | SeverityLevel>("All");
+  // The calendar's selected day. null means "today", so it keeps following the
+  // date if the app stays open past midnight.
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Form State
   // Severity over time for the migraine being edited (see lib/severity.ts).
@@ -572,24 +606,33 @@ export default function Home() {
 
   const handleDelete = async () => {
     if (!editingId) return;
-    if (!confirm("Are you sure you want to delete this entry?")) return;
+    setDeleting(true);
     try {
       await deleteMigraine({ id: editingId });
+      setConfirmingDelete(false);
+      setDeleting(false);
       resetForm();
       setView(backView);
     } catch (error) {
+      setDeleting(false);
+      setConfirmingDelete(false);
       alert(error instanceof Error ? error.message : "Failed to delete");
     }
   };
 
-  const startNew = () => {
+  // `forDay` logs a migraine retrospectively: noon to 1pm that day as a
+  // starting point to adjust. Without it, a migraine starting now.
+  const startNew = (forDay?: Date) => {
     resetForm();
-    const d = new Date();
-    setFormStartTime(
-      new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 16)
-    );
+    const day = forDay instanceof Date ? forDay : null;
+    const retrospective = day !== null && !isSameDay(day, new Date());
+    if (retrospective && day) {
+      const noon = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12).getTime();
+      setFormStartTime(toLocalInput(noon));
+      setFormEndTime(toLocalInput(noon + 3600_000));
+    } else {
+      setFormStartTime(toLocalInput(Date.now()));
+    }
     setBackView(view === "list" || view === "calendar" ? view : "home");
     setView("new");
   };
@@ -744,6 +787,32 @@ export default function Home() {
   const activeMigraines = migraines.filter((m) => m.endTime === null);
   const lastMigraine = migraines.find((m) => m.endTime !== null);
 
+  // Calendar: "today" unless the user picked another day.
+  const today = startOfDay(now);
+  const activeDay = selectedDay ?? today;
+  const activeIsToday = isSameDay(activeDay, today);
+  const dayMigraines = migraines.filter((m) => overlapsDay(m, activeDay, now));
+
+  // Local days that had a migraine, bucketed by that day's peak severity.
+  const calendarDays = useMemo<MigraineDays>(() => {
+    const peakByDay = new Map<number, number>();
+    for (const m of migraines) {
+      const last = Math.max(m.endTime ?? now, m.startTime + 1);
+      let day = startOfDay(m.startTime);
+      for (let i = 0; i < 366 && day.getTime() < last; i++) {
+        const key = day.getTime();
+        peakByDay.set(key, Math.max(peakByDay.get(key) ?? 0, m.severity));
+        day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+      }
+    }
+    const buckets: MigraineDays = { high: [], moderate: [], mild: [], low: [] };
+    for (const [key, peak] of peakByDay) {
+      const level = getSeverityDetails(peak).level;
+      buckets[level === "High" ? "high" : level === "Moderate" ? "moderate" : level === "Mild" ? "mild" : "low"].push(new Date(key));
+    }
+    return buckets;
+  }, [migraines, now]);
+
   return (
     // Sized from --app-height (see lib/app-height.ts), not bottom-anchored to
     // the viewport: iOS standalone mode reports a viewport shorter than the
@@ -760,10 +829,8 @@ export default function Home() {
         {/* --- Home: log a new migraine, or edit the one in progress --- */}
         {view === "home" && (
           <>
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
-              <h2 data-layout-debug className="text-2xl font-bold text-text-dark">Mygraines</h2>
-            </div>
-            <div className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto px-6 pb-28">
+            <AppHeader />
+            <div className="no-scrollbar flex flex-1 flex-col justify-center overflow-y-auto px-6 pb-safe-nav">
               {isLoadingMigraines ? (
                 <HomeSkeleton />
               ) : activeMigraines.length > 0 ? (
@@ -774,7 +841,7 @@ export default function Home() {
                   onEdit={startEdit}
                 />
               ) : (
-                <NoActiveMigraine last={lastMigraine} onCreate={startNew} />
+                <NoActiveMigraine last={lastMigraine} onCreate={() => startNew()} />
               )}
             </div>
           </>
@@ -783,12 +850,13 @@ export default function Home() {
         {/* --- History (all migraines) --- */}
         {view === "list" && (
           <>
+            <AppHeader />
             {/* Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-4 pb-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-text-dark">History</h2>
                 <button
-                  onClick={startNew}
+                  onClick={() => startNew()}
                   className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-full font-medium text-sm shadow-lg shadow-purple-900/30 active:scale-95 transition-transform"
                 >
                   <span className="material-symbols-outlined text-[18px]">add</span>
@@ -822,7 +890,7 @@ export default function Home() {
             </div>
 
             {/* List */}
-            <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-2 pb-24">
+            <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-2 pb-safe-nav">
               <div className="flex flex-col gap-3">
                 {isLoadingMigraines &&
                   Array.from({ length: 6 }, (_, i) => (
@@ -916,147 +984,127 @@ export default function Home() {
         {/* --- Calendar View --- */}
         {view === "calendar" && (
           <>
-            {/* Calendar Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    const newMonth = calendarMonth.month === 0 ? 11 : calendarMonth.month - 1;
-                    const newYear = calendarMonth.month === 0 ? calendarMonth.year - 1 : calendarMonth.year;
-                    setCalendarMonth({ year: newYear, month: newMonth });
-                  }}
-                  className="p-2 text-gray-400 hover:text-white transition-colors"
-                >
-                  <span className="material-symbols-outlined">chevron_left</span>
-                </button>
-                <h2 className="text-xl font-bold text-text-dark">
-                  {getMonthName(calendarMonth.month)} {calendarMonth.year}
-                </h2>
-                <button
-                  onClick={() => {
-                    const newMonth = calendarMonth.month === 11 ? 0 : calendarMonth.month + 1;
-                    const newYear = calendarMonth.month === 11 ? calendarMonth.year + 1 : calendarMonth.year;
-                    setCalendarMonth({ year: newYear, month: newMonth });
-                  }}
-                  className="p-2 text-gray-400 hover:text-white transition-colors"
-                >
-                  <span className="material-symbols-outlined">chevron_right</span>
-                </button>
-              </div>
-            </div>
+            <AppHeader />
+            <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-4 pb-safe-nav">
+              <MigraineCalendar
+                month={new Date(calendarMonth.year, calendarMonth.month, 1)}
+                onMonthChange={(month) =>
+                  setCalendarMonth({
+                    year: month.getFullYear(),
+                    month: month.getMonth(),
+                  })
+                }
+                selected={activeDay}
+                onSelect={(day) =>
+                  setSelectedDay(isSameDay(day, today) ? null : day)
+                }
+                today={today}
+                days={calendarDays}
+              />
 
-            {/* Calendar Grid */}
-            <div className="flex-1 overflow-y-auto px-4 pb-24">
-              {/* Day Headers */}
-              <div className="grid grid-cols-7 gap-1 mb-2">
-                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-                  <div
-                    key={day}
-                    className="text-center text-xs font-medium text-gray-500 py-2"
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
+              {/* Selected day: today by default; other days are for looking back */}
+              <div className="mt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-text-dark">
+                    {activeIsToday ? "Today" : formatDayLong(activeDay)}
+                  </h3>
+                  {!activeIsToday && (
+                    <button
+                      onClick={() => {
+                        setSelectedDay(null);
+                        setCalendarMonth({
+                          year: today.getFullYear(),
+                          month: today.getMonth(),
+                        });
+                      }}
+                      className="text-sm font-medium text-primary active:scale-95"
+                    >
+                      Back to today
+                    </button>
+                  )}
+                </div>
 
-              {/* Calendar Days */}
-              <div className="grid grid-cols-7 gap-1">
-                {(() => {
-                  const daysInMonth = getDaysInMonth(calendarMonth.year, calendarMonth.month);
-                  const firstDay = getFirstDayOfMonth(calendarMonth.year, calendarMonth.month);
-                  const today = new Date();
-                  const cells = [];
-
-                  // Empty cells for days before the first of the month
-                  for (let i = 0; i < firstDay; i++) {
-                    cells.push(
-                      <div key={`empty-${i}`} className="aspect-square" />
-                    );
-                  }
-
-                  // Days of the month
-                  for (let day = 1; day <= daysInMonth; day++) {
-                    const cellDate = new Date(calendarMonth.year, calendarMonth.month, day);
-                    const isToday = isSameDay(cellDate, today);
-                    
-                    // Find migraines for this day
-                    const dayMigraines = migraines.filter((m) => {
-                      const startDate = new Date(m.startTime);
-                      const endDate = m.endTime ? new Date(m.endTime) : new Date(now);
-
-                      // Overlap with [dayStart, nextDayStart). Half-open, so a
-                      // migraine that ends exactly at midnight (auto-stopped)
-                      // belongs to the day it started on, not the next one.
-                      const dayStart = new Date(calendarMonth.year, calendarMonth.month, day);
-                      const nextDayStart = new Date(calendarMonth.year, calendarMonth.month, day + 1);
-
+                {dayMigraines.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {dayMigraines.map((m) => {
+                      const d = getSeverityDetails(m.severity);
+                      const timeline = readingsOf(m);
+                      const isOpen = m.endTime === null;
                       return (
-                        startDate < nextDayStart &&
-                        (endDate > dayStart || startDate >= dayStart)
-                      );
-                    });
-
-                    const hasMigraine = dayMigraines.length > 0;
-                    const maxSeverity = hasMigraine
-                      ? Math.max(...dayMigraines.map((m) => m.severity))
-                      : 0;
-                    const severityDetails = hasMigraine
-                      ? getSeverityDetails(maxSeverity)
-                      : null;
-
-                    cells.push(
-                      <div
-                        key={day}
-                        className={`aspect-square rounded-xl flex flex-col items-center justify-center relative cursor-pointer transition-all hover:scale-105 ${
-                          isToday
-                            ? "ring-2 ring-primary ring-offset-2 ring-offset-background-dark"
-                            : ""
-                        } ${
-                          hasMigraine && severityDetails
-                            ? `${severityDetails.bgClass} border ${severityDetails.borderClass}`
-                            : "bg-surface-dark border border-gray-800"
-                        }`}
-                        onClick={() => {
-                          if (dayMigraines.length === 1) {
-                            startEdit(dayMigraines[0]);
-                          } else if (dayMigraines.length > 1) {
-                            // If multiple migraines, go to list view (could be enhanced)
-                            setView("list");
-                          }
-                        }}
-                      >
-                        <span
-                          className={`text-sm font-medium ${
-                            hasMigraine && severityDetails
-                              ? severityDetails.textClass
-                              : isToday
-                                ? "text-primary"
-                                : "text-text-dark"
-                          }`}
+                        <button
+                          key={m._id}
+                          onClick={() => startEdit(m)}
+                          className="flex items-center gap-3 rounded-2xl border border-gray-800 bg-surface-dark p-3 text-left transition-transform active:scale-[0.98]"
                         >
-                          {day}
-                        </span>
-                        {hasMigraine && severityDetails && (
-                          <div className="flex items-center gap-0.5 mt-0.5">
-                            {dayMigraines.length > 1 ? (
-                              <span className="text-[8px] font-bold text-gray-400">
-                                {dayMigraines.length}
-                              </span>
-                            ) : (
-                              <span
-                                className={`material-symbols-outlined text-[12px] ${severityDetails.colorClass}`}
-                              >
-                                {severityDetails.icon}
-                              </span>
-                            )}
+                          <div
+                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${d.bgClass} ${d.borderClass} ${d.colorClass}`}
+                          >
+                            <span className="material-symbols-outlined">
+                              {d.icon}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  }
+                          <div className="min-w-0 flex-1">
+                            <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-text-dark">
+                              {formatTime(m.startTime)} –{" "}
+                              {m.endTime ? formatTime(m.endTime) : "Now"}
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                                  isOpen
+                                    ? "border-primary bg-primary text-white"
+                                    : `${d.bgClass} ${d.textClass} ${d.borderClass}`
+                                }`}
+                              >
+                                {isOpen ? "Active" : d.level}
+                              </span>
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {formatDuration(m.startTime, m.endTime)}
+                              {timeline.length > 1 &&
+                                ` · ${timeline.map((r) => r.severity).join(" → ")}`}
+                            </p>
+                          </div>
+                          <span className="material-symbols-outlined text-gray-600">
+                            chevron_right
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-gray-800 bg-surface-dark px-4 py-6 text-center">
+                    <p className="font-medium text-text-dark">
+                      {activeIsToday
+                        ? "No migraine today"
+                        : "Nothing logged for this day"}
+                    </p>
+                    {activeIsToday && (
+                      <button
+                        onClick={() => startNew()}
+                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 font-bold text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
+                      >
+                        <span className="material-symbols-outlined">add</span>
+                        Log a migraine
+                      </button>
+                    )}
+                  </div>
+                )}
 
-                  return cells;
-                })()}
+                {/* Looking back is secondary to logging what is happening now */}
+                {(!activeIsToday || dayMigraines.length > 0) && (
+                  <button
+                    onClick={() => startNew(activeIsToday ? undefined : activeDay)}
+                    className="mt-3 flex items-center gap-2 text-sm font-medium text-primary active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      add
+                    </span>
+                    {activeIsToday
+                      ? "Log another"
+                      : dayMigraines.length > 0
+                        ? "Add another for this day"
+                        : "Add a migraine for this day"}
+                  </button>
+                )}
               </div>
 
               {/* Legend */}
@@ -1135,8 +1183,9 @@ export default function Home() {
         {/* --- Meals List View --- */}
         {SHOW_MEALS && view === "meals" && (
           <>
+            <AppHeader />
             {/* Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-safe-header pb-4">
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-4 pb-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-text-dark">Meals</h2>
                 <button
@@ -1160,7 +1209,7 @@ export default function Home() {
             </div>
 
             {/* Meals List */}
-            <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-2 pb-24">
+            <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-2 pb-safe-nav">
               <div className="flex flex-col gap-3">
                 {(allMeals || []).map((meal) => (
                   <div
@@ -1237,7 +1286,7 @@ export default function Home() {
               </button>
             </header>
 
-            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-4">
+            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-safe-bottom">
               <div className="space-y-6">
                 {/* What did you eat? - Food database multi-select + free text */}
                 <div>
@@ -1374,7 +1423,7 @@ export default function Home() {
               </button>
             </header>
 
-            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-4">
+            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-safe-bottom">
               <div className="space-y-8">
                 {/* Duration Section */}
                 <div>
@@ -1657,7 +1706,7 @@ export default function Home() {
                 {/* Delete Button */}
                 {view === "edit" && (
                   <button
-                    onClick={handleDelete}
+                    onClick={() => setConfirmingDelete(true)}
                     className="w-full text-red-400 font-medium py-2 flex items-center justify-center gap-2 hover:text-red-300 transition-colors"
                   >
                     <span className="material-symbols-outlined text-[20px]">
@@ -1680,7 +1729,8 @@ export default function Home() {
             data-app-nav
             className="absolute bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm"
             style={{
-              paddingBottom: "max(1.5rem, env(safe-area-inset-bottom, 1.5rem))",
+              paddingBottom:
+                "max(var(--viewport-gap, 0px), 1.5rem, env(safe-area-inset-bottom, 1.5rem))",
             }}
           >
             <div className="flex h-14 items-center justify-around px-4">
@@ -1727,7 +1777,15 @@ export default function Home() {
 
               {/* Calendar Button */}
               <button
-                onClick={() => setView("calendar")}
+                onClick={() => {
+                  // "Assume today": the calendar tab always opens on today.
+                  setSelectedDay(null);
+                  setCalendarMonth({
+                    year: new Date().getFullYear(),
+                    month: new Date().getMonth(),
+                  });
+                  setView("calendar");
+                }}
                 className={`flex flex-col items-center justify-center transition-colors ${
                   view === "calendar" ? "text-primary" : "text-gray-500 hover:text-gray-300"
                 }`}
@@ -1739,6 +1797,17 @@ export default function Home() {
               </button>
             </div>
           </div>
+        )}
+
+        {confirmingDelete && (
+          <ConfirmDialog
+            title="Delete this entry?"
+            body="This can't be undone."
+            confirmLabel="Delete"
+            busy={deleting}
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmingDelete(false)}
+          />
         )}
       </div>
     </div>
