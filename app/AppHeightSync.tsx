@@ -57,6 +57,7 @@ export function AppHeightSync() {
 
 function LayoutDebug({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState("");
+  const [probeTaps, setProbeTaps] = useState(0);
 
   useEffect(() => {
     const probe = (css: string) => {
@@ -92,12 +93,24 @@ function LayoutDebug({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-x-2 top-24 z-[100] whitespace-pre rounded-xl border border-gray-700 bg-black/90 p-3 font-mono text-[11px] leading-5 text-green-300"
-    >
-      {text}
-      {"\n(tap to close)"}
-    </div>
+    <>
+      <div
+        onClick={onClose}
+        className="fixed inset-x-2 top-24 z-[100] whitespace-pre rounded-xl border border-gray-700 bg-black/90 p-3 font-mono text-[11px] leading-5 text-green-300"
+      >
+        {text}
+        {"\n(tap to close)"}
+      </div>
+      {/* Sits on the very bottom edge of the app: does it receive taps? */}
+      <button
+        onClick={() => setProbeTaps((n) => n + 1)}
+        style={{ top: "calc(var(--app-height, 100dvh) - 44px)" }}
+        className="fixed inset-x-0 z-[110] h-11 bg-green-500/85 text-center text-sm font-bold text-black"
+      >
+        {probeTaps === 0
+          ? "Bottom-edge tap test: tap here"
+          : `Received ${probeTaps} tap${probeTaps === 1 ? "" : "s"}`}
+      </button>
+    </>
   );
 }

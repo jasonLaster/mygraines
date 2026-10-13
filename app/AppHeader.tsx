@@ -24,6 +24,25 @@ export function Logo({ size = 36 }: { size?: number }) {
   );
 }
 
+/** Round "+" for the app header: log a migraine. */
+export function AddButton({
+  onClick,
+  label = "Log a migraine",
+}: {
+  onClick: () => void;
+  label?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
+    >
+      <span className="material-symbols-outlined">add</span>
+    </button>
+  );
+}
+
 /**
  * The app bar shown on the main screens: logo and name, with room on the right
  * for context. It owns the top safe-area padding, so screens below it don't.

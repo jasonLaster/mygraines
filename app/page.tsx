@@ -15,7 +15,7 @@ import {
   type Reading,
 } from "@/lib/severity";
 import { SeverityChart } from "./SeverityChart";
-import { AppHeader } from "./AppHeader";
+import { AddButton, AppHeader } from "./AppHeader";
 import { MigraineCalendar, type MigraineDays } from "./MigraineCalendar";
 import { getSeverityDetails, type SeverityLevel } from "./severity-display";
 
@@ -138,21 +138,19 @@ function ConfirmDialog({
   title,
   body,
   confirmLabel,
-  busy,
   onConfirm,
   onCancel,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
-  busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   return (
     <div
       className="absolute inset-0 z-[70] flex items-center justify-center bg-black/60 px-8"
-      onClick={busy ? undefined : onCancel}
+      onClick={onCancel}
     >
       <div
         role="alertdialog"
@@ -166,17 +164,15 @@ function ConfirmDialog({
         <div className="mt-5 flex gap-3">
           <button
             onClick={onCancel}
-            disabled={busy}
-            className="flex-1 rounded-full border border-gray-700 py-3 font-medium text-text-dark transition-transform active:scale-95 disabled:opacity-50"
+            className="flex-1 rounded-full border border-gray-700 py-3 font-medium text-text-dark transition-transform active:scale-95"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            disabled={busy}
-            className="flex-1 rounded-full bg-red-500 py-3 font-bold text-white transition-transform active:scale-95 disabled:opacity-70"
+            className="flex-1 rounded-full bg-red-500 py-3 font-bold text-white transition-transform active:scale-95"
           >
-            {busy ? "Deleting…" : confirmLabel}
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -204,15 +200,12 @@ function MigraineCardSkeleton() {
     >
       <div className="flex flex-1 items-start gap-4">
         <div className="h-12 w-12 shrink-0 rounded-full bg-gray-800" />
-        <div className="flex flex-col justify-center gap-1">
+        <div className="flex flex-col justify-center gap-1.5">
           <div className="flex h-[18px] items-center">
             <div className="h-4 w-24 rounded bg-gray-800" />
           </div>
           <div className="flex h-5 items-center">
-            <div className="h-3.5 w-36 rounded bg-gray-800/70" />
-          </div>
-          <div className="flex h-4 items-center">
-            <div className="h-3 w-16 rounded bg-gray-800/50" />
+            <div className="h-3.5 w-32 rounded bg-gray-800/70" />
           </div>
         </div>
       </div>
@@ -343,14 +336,8 @@ function ActiveMigraine({
   );
 }
 
-// Nothing in progress: invite the user to log one.
-function NoActiveMigraine({
-  last,
-  onCreate,
-}: {
-  last: Doc<"migraines"> | undefined;
-  onCreate: () => void;
-}) {
+// Nothing in progress: the sun and a way to log one.
+function NoActiveMigraine({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center text-center">
       <div className="flex h-24 w-24 items-center justify-center rounded-full border border-gray-800 bg-surface-dark text-accent-purple">
@@ -358,12 +345,6 @@ function NoActiveMigraine({
           light_mode
         </span>
       </div>
-      <h3 className="mt-6 text-2xl font-bold text-text-dark">
-        No migraine right now
-      </h3>
-      <p className="mt-2 max-w-xs text-gray-400">
-        Log one when it starts and it will be tracked until it ends.
-      </p>
       <button
         onClick={onCreate}
         className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-4 text-base font-bold text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
@@ -371,12 +352,6 @@ function NoActiveMigraine({
         <span className="material-symbols-outlined">add</span>
         Log a migraine
       </button>
-      {last && (
-        <p className="mt-6 text-xs text-gray-500">
-          Last migraine: {formatDateShort(last.startTime)} ·{" "}
-          {formatDuration(last.startTime, last.endTime)}
-        </p>
-      )}
     </div>
   );
 }
@@ -388,7 +363,20 @@ export default function Home() {
   );
   const createMigraine = useMutation(api.migraines.create);
   const updateMigraine = useMutation(api.migraines.update);
-  const deleteMigraine = useMutation(api.migraines.deleteMigraine);
+  // Optimistic: the entry leaves every list the instant it is deleted, and
+  // Convex restores it automatically if the server rejects the delete.
+  const deleteMigraine = useMutation(
+    api.migraines.deleteMigraine,
+  ).withOptimisticUpdate((localStore, { id }) => {
+    const current = localStore.getQuery(api.migraines.getAll, {});
+    if (current !== undefined) {
+      localStore.setQuery(
+        api.migraines.getAll,
+        {},
+        current.filter((m) => m._id !== id),
+      );
+    }
+  });
 
   // Meals
   const { data: allMeals } = useCachedQuery(api.meals.getAll, "meals", {
@@ -415,7 +403,6 @@ export default function Home() {
   // date if the app stays open past midnight.
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   // Form State
   // Severity over time for the migraine being edited (see lib/severity.ts).
@@ -604,20 +591,17 @@ export default function Home() {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!editingId) return;
-    setDeleting(true);
-    try {
-      await deleteMigraine({ id: editingId });
-      setConfirmingDelete(false);
-      setDeleting(false);
-      resetForm();
-      setView(backView);
-    } catch (error) {
-      setDeleting(false);
-      setConfirmingDelete(false);
+    const id = editingId;
+    // Close and leave straight away; the optimistic update has already removed
+    // the entry from the lists. A server-side failure is reported afterwards.
+    setConfirmingDelete(false);
+    resetForm();
+    setView(backView);
+    deleteMigraine({ id }).catch((error) => {
       alert(error instanceof Error ? error.message : "Failed to delete");
-    }
+    });
   };
 
   // `forDay` logs a migraine retrospectively: noon to 1pm that day as a
@@ -785,7 +769,6 @@ export default function Home() {
 
   const isLoadingMigraines = allMigraines === undefined;
   const activeMigraines = migraines.filter((m) => m.endTime === null);
-  const lastMigraine = migraines.find((m) => m.endTime !== null);
 
   // Calendar: "today" unless the user picked another day.
   const today = startOfDay(now);
@@ -841,7 +824,7 @@ export default function Home() {
                   onEdit={startEdit}
                 />
               ) : (
-                <NoActiveMigraine last={lastMigraine} onCreate={() => startNew()} />
+                <NoActiveMigraine onCreate={() => startNew()} />
               )}
             </div>
           </>
@@ -850,19 +833,9 @@ export default function Home() {
         {/* --- History (all migraines) --- */}
         {view === "list" && (
           <>
-            <AppHeader />
-            {/* Header */}
-            <div className="flex-shrink-0 bg-background-dark px-6 pt-4 pb-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-text-dark">History</h2>
-                <button
-                  onClick={() => startNew()}
-                  className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-full font-medium text-sm shadow-lg shadow-purple-900/30 active:scale-95 transition-transform"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add</span>
-                  Add Migraine
-                </button>
-              </div>
+            <AppHeader trailing={<AddButton onClick={() => startNew()} />} />
+            <div className="flex-shrink-0 bg-background-dark px-6 pt-4 pb-3">
+              <h2 className="text-2xl font-bold text-text-dark">History</h2>
             </div>
 
             {/* Filter Pills */}
@@ -916,7 +889,7 @@ export default function Home() {
                             {details.icon}
                           </span>
                         </div>
-                        <div className="flex flex-col justify-center gap-1">
+                        <div className="flex flex-col justify-center gap-1.5">
                           <div className="flex items-center gap-2">
                             <h3 className="text-lg font-bold leading-none text-text-dark">
                               {formatDateShort(migraine.startTime)}
@@ -932,15 +905,7 @@ export default function Home() {
                             </span>
                           </div>
                           <p className="text-sm font-medium text-gray-400">
-                            {formatTime(migraine.startTime)} –{" "}
-                            {migraine.endTime
-                              ? formatTime(migraine.endTime)
-                              : "Now"}
-                          </p>
-                          <p className="flex items-center gap-1 text-xs font-medium text-gray-500">
-                            <span className="material-symbols-outlined text-[14px]">
-                              schedule
-                            </span>{" "}
+                            {formatTime(migraine.startTime)} ·{" "}
                             {formatDuration(
                               migraine.startTime,
                               migraine.endTime
@@ -984,7 +949,18 @@ export default function Home() {
         {/* --- Calendar View --- */}
         {view === "calendar" && (
           <>
-            <AppHeader />
+            <AppHeader
+              trailing={
+                <AddButton
+                  onClick={() => startNew(activeIsToday ? undefined : activeDay)}
+                  label={
+                    activeIsToday
+                      ? "Log a migraine"
+                      : "Add a migraine for this day"
+                  }
+                />
+              }
+            />
             <div className="no-scrollbar flex-1 overflow-y-auto px-4 pt-4 pb-safe-nav">
               <MigraineCalendar
                 month={new Date(calendarMonth.year, calendarMonth.month, 1)}
@@ -1045,8 +1021,7 @@ export default function Home() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="flex flex-wrap items-center gap-2 text-sm font-bold text-text-dark">
-                              {formatTime(m.startTime)} –{" "}
-                              {m.endTime ? formatTime(m.endTime) : "Now"}
+                              {formatTime(m.startTime)}
                               <span
                                 className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                                   isOpen
@@ -1072,38 +1047,12 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-gray-800 bg-surface-dark px-4 py-6 text-center">
-                    <p className="font-medium text-text-dark">
+                    <p className="font-medium text-gray-400">
                       {activeIsToday
                         ? "No migraine today"
                         : "Nothing logged for this day"}
                     </p>
-                    {activeIsToday && (
-                      <button
-                        onClick={() => startNew()}
-                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 font-bold text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
-                      >
-                        <span className="material-symbols-outlined">add</span>
-                        Log a migraine
-                      </button>
-                    )}
                   </div>
-                )}
-
-                {/* Looking back is secondary to logging what is happening now */}
-                {(!activeIsToday || dayMigraines.length > 0) && (
-                  <button
-                    onClick={() => startNew(activeIsToday ? undefined : activeDay)}
-                    className="mt-3 flex items-center gap-2 text-sm font-medium text-primary active:scale-95"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">
-                      add
-                    </span>
-                    {activeIsToday
-                      ? "Log another"
-                      : dayMigraines.length > 0
-                        ? "Add another for this day"
-                        : "Add a migraine for this day"}
-                  </button>
                 )}
               </div>
 
@@ -1400,7 +1349,7 @@ export default function Home() {
 
         {/* --- New / Edit Views (Updated Layout) --- */}
         {(view === "new" || view === "edit") && (
-          <div className="flex flex-1 flex-col overflow-hidden bg-background-dark">
+          <div className="relative flex flex-1 flex-col overflow-hidden bg-background-dark">
             {/* Header */}
             <header className="flex-shrink-0 flex items-center justify-between px-6 pb-6 pt-safe-bar">
               <button
@@ -1415,15 +1364,10 @@ export default function Home() {
               <h2 className="text-lg font-bold text-text-dark">
                 {view === "new" ? "New Entry" : "Edit Migraine"}
               </h2>
-              <button
-                onClick={view === "new" ? handleCreate : handleSaveEdit}
-                className="font-bold text-primary hover:text-accent-purple"
-              >
-                Save
-              </button>
+              <span className="w-10" aria-hidden />
             </header>
 
-            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-safe-bottom">
+            <div className="no-scrollbar flex-1 overflow-y-auto px-6 pb-safe-actionbar">
               <div className="space-y-8">
                 {/* Duration Section */}
                 <div>
@@ -1694,27 +1638,38 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Save Button (Bottom) */}
-                <button
-                  onClick={view === "new" ? handleCreate : handleSaveEdit}
-                  className="w-full bg-primary text-white font-bold py-4 rounded-full text-lg shadow-lg shadow-purple-900/30 active:scale-95 transition-transform flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined">check</span>
-                  Save Changes
-                </button>
+              </div>
+            </div>
 
-                {/* Delete Button */}
+            {/* Fixed action bar: always at the bottom of the screen, whatever
+                the scroll position. Its background reaches the real bottom edge
+                while the buttons stay in the tappable area. */}
+            <div
+              className="absolute inset-x-0 bottom-0 z-40 border-t border-gray-800 bg-surface-dark/95 px-6 pt-3 backdrop-blur-sm"
+              style={{
+                paddingBottom:
+                  "max(calc(var(--viewport-gap, 0px) + 0.5rem), 1rem, env(safe-area-inset-bottom, 1rem))",
+              }}
+            >
+              <div className="flex gap-3">
                 {view === "edit" && (
                   <button
                     onClick={() => setConfirmingDelete(true)}
-                    className="w-full text-red-400 font-medium py-2 flex items-center justify-center gap-2 hover:text-red-300 transition-colors"
+                    className="flex h-12 items-center justify-center gap-2 rounded-full border border-red-900/60 px-5 font-bold text-red-400 transition-transform active:scale-95"
                   >
                     <span className="material-symbols-outlined text-[20px]">
                       delete
                     </span>
-                    Delete Entry
+                    Delete
                   </button>
                 )}
+                <button
+                  onClick={view === "new" ? handleCreate : handleSaveEdit}
+                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-primary text-base font-bold text-white shadow-lg shadow-purple-900/30 transition-transform active:scale-95"
+                >
+                  <span className="material-symbols-outlined">check</span>
+                  Save
+                </button>
               </div>
             </div>
           </div>
@@ -1730,7 +1685,7 @@ export default function Home() {
             className="absolute bottom-0 left-0 right-0 z-50 w-full max-w-md mx-auto border-t border-gray-800 bg-surface-dark/95 backdrop-blur-sm"
             style={{
               paddingBottom:
-                "max(var(--viewport-gap, 0px), 1.5rem, env(safe-area-inset-bottom, 1.5rem))",
+                "max(calc(var(--viewport-gap, 0px) + 0.5rem), 1.5rem, env(safe-area-inset-bottom, 1.5rem))",
             }}
           >
             <div className="flex h-14 items-center justify-around px-4">
@@ -1804,7 +1759,6 @@ export default function Home() {
             title="Delete this entry?"
             body="This can't be undone."
             confirmLabel="Delete"
-            busy={deleting}
             onConfirm={handleDelete}
             onCancel={() => setConfirmingDelete(false)}
           />

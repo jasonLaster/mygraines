@@ -56,13 +56,21 @@
  */
 @utility pb-safe-nav {
   padding-bottom: calc(
-    max(var(--viewport-gap, 0px), 1.5rem, env(safe-area-inset-bottom)) + 4.5rem
+    max(calc(var(--viewport-gap, 0px) + 0.5rem), 1.5rem, env(safe-area-inset-bottom)) + 4.5rem
+  );
+}
+
+/* Clears the fixed Save/Delete bar on the new/edit screens (3.75rem tall plus
+   the same bottom padding the bar uses). */
+@utility pb-safe-actionbar {
+  padding-bottom: calc(
+    max(calc(var(--viewport-gap, 0px) + 0.5rem), 1rem, env(safe-area-inset-bottom)) + 5.5rem
   );
 }
 
 @utility pb-safe-bottom {
   padding-bottom: calc(
-    max(var(--viewport-gap, 0px), env(safe-area-inset-bottom)) + 1.5rem
+    max(calc(var(--viewport-gap, 0px) + 0.5rem), env(safe-area-inset-bottom)) + 1.5rem
   );
 }
 
